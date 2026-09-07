@@ -1,0 +1,52 @@
+name: ASTRA batch2 published source export
+on:
+  push:
+    branches: [ci/astra-batch2-published-export-20260907]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0bf0b299fed91139044c81cc6fcdc5521c34d235
+          persist-credentials: false
+      - name: Export published regression additions without executing them
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=0bf0b299fed91139044c81cc6fcdc5521c34d235
+          mkdir -p export
+          git archive --format=tar.gz "$BASE" > export/base.tar.gz
+          git ls-tree -r "$BASE" > export/base-tree.txt
+          cat > export/expected.tsv <<'EOF'
+          840 f0c72eb fsck-empty-metaindex-listing
+          842 9e0191a fsck-empty-chunk-listing
+          844 5638f94 list-archives-close-on-bad-hash
+          846 c630a4c directory-read-handoff
+          848 23ea42d commit-storage-modified
+          852 82e169b chunks-directory-imalloc
+          854 d705e60 recrypt-fsync-new-directory
+          856 4158097 writeq-cancel-terminate
+          858 606758a nodata-empty-buffer
+          860 2dc28d0 sigquit-volatile
+          862 1bc8e0b patricia-unsigned-shift
+          EOF
+          while read -r number prefix branch; do
+            git fetch --no-tags --depth=1 origin "$branch"
+            sha=$(git rev-parse FETCH_HEAD)
+            [[ "$sha" == "$prefix"* ]] || { echo "Unexpected head for $number: $sha"; exit 1; }
+            printf '%s %s %s\n' "$number" "$sha" "$branch" >> export/heads.tsv
+            git diff --binary "$BASE" "$sha" > "export/pr$number.patch"
+            git ls-tree -r "$sha" > "export/pr$number-tree.txt"
+          done < export/expected.tsv
+          cd export
+          sha256sum * > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astra-batch2-published-source
+          path: export/
+          retention-days: 14
+          if-no-files-found: error
