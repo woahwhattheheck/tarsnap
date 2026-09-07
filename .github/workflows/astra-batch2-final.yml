@@ -1,0 +1,81 @@
+name: ASTRA batch2 final verification
+on:
+  push:
+    branches: [ci/astra-batch2-final-20260907]
+permissions:
+  contents: read
+jobs:
+  regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Configure public source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          gcc --version > evidence/environment.txt
+          uname -a >> evidence/environment.txt
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure --without-lzma > evidence/configure.log 2>&1
+      - name: Execute exact published regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > evidence/heads.tsv <<'EOF'
+          840 f0c72eb20a3b435ff347a46a6574c74e07c4f18d fsck-metaindex.sh
+          842 9e0191afebf32d1a47b263c8f39fdc990cfea7b1 chunks-fsck.sh
+          844 5638f94c353500e57ecfaa2d948d54fb19d33be0 list-archives.sh
+          846 c630a4ca4e3c659d2b67999a17288a30f5cba83b storage-directory.sh
+          848 23ea42df198c74a979e1b24cce6d7dd7ab482805 storage-commit.sh
+          852 82e169b31a7443e95edac481bc6826c6618b4cf5 chunks-directory.sh
+          854 d705e605a1253a8f8c5bba5683586c888dcc22f0 recrypt-durability.sh
+          856 4158097161607f5e99e7fcb83f025eb206954ed3 network-writeq.sh
+          858 606758a62e6588e5679a05b348c82fb04dab4a80 network-timeout.sh
+          860 2dc28d0df423985dc31e0b0c01096306d7470b3b sigquit.sh
+          862 1bc8e0b53e823280db53dae2f3c110c3fc8cbd15 patricia.sh
+          EOF
+          mkdir -p "$RUNNER_TEMP/astra-batch2"
+          while read -r number sha script; do
+            git fetch --no-tags --depth=1 origin "$sha"
+            work="$RUNNER_TEMP/astra-batch2/pr$number"
+            git worktree add --detach "$work" "$sha"
+            test "$(git -C "$work" rev-parse HEAD)" = "$sha"
+            git -C "$work" ls-tree -r HEAD tests/unit > "evidence/pr$number-test-blobs.txt"
+            set +e
+            sh "$work/tests/unit/$script" "$GITHUB_WORKSPACE" > "evidence/pr$number.log" 2>&1
+            result=$?
+            set -e
+            printf '%s\t%s\n' "$number" "$result" | tee -a evidence/results.tsv
+            test "$result" = 0
+            git -C "$work" diff --exit-code
+          done < evidence/heads.tsv
+      - name: Build the combined twelve-source-file composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=0bf0b299fed91139044c81cc6fcdc5521c34d235
+          while read -r number sha script; do
+            git diff --name-only "$BASE" "$sha" -- . ':!tests/unit/*' | while read -r path; do
+              git show "$sha:$path" > "$path"
+              printf '%s\t%s\t%s\n' "$number" "$path" "$(git hash-object --no-filters "$path")" >> evidence/combined-source-blobs.tsv
+            done
+          done < evidence/heads.tsv
+          make -j2 > evidence/native-build.log 2>&1
+          printf 'build\t0\n' > evidence/build-status.tsv
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            "./$binary" --version >> evidence/native-smoke.log 2>&1
+            printf '%s\t0\n' "$binary" >> evidence/build-status.tsv
+          done
+          { echo '## Eleven published regression suites'; echo '```'; cat evidence/results.tsv; echo '```'; echo '## Combined native build and version-only CLI smoke'; echo '```'; cat evidence/build-status.tsv; echo '```'; echo 'The build composes the eleven existing patches. It is not an upstream merge, live-server test, or eleven separate full builds. All fault cases are local fixtures; no accounts or real keys are used.'; } >> "$GITHUB_STEP_SUMMARY"
+          (cd evidence && sha256sum *.log *.txt *.tsv > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-batch2-final-evidence
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
