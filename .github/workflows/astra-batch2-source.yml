@@ -1,0 +1,49 @@
+name: ASTRA batch2 source export
+on:
+  push:
+    branches: [ci/astra-batch2-source-20260907]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0bf0b299fed91139044c81cc6fcdc5521c34d235
+          persist-credentials: false
+      - name: Export exact public base and eleven existing PR patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=0bf0b299fed91139044c81cc6fcdc5521c34d235
+          mkdir -p export
+          git archive --format=tar.gz "$BASE" > export/base.tar.gz
+          git ls-tree -r "$BASE" > export/base-tree.txt
+          cat > export/heads.tsv <<'EOF'
+          840 337dcde7d8471ebd8b015c3362033ab2a00c5a13 fsck-empty-metaindex-listing
+          842 8a5886951fc15d66bf50f6255545580ee1ad43c3 fsck-empty-chunk-listing
+          844 018c7fd8db098f0763e81ab11b2fa55d2123fb3d list-archives-close-on-bad-hash
+          846 e5f5f7e215427476a3eba2b5778a56c7174504fc directory-read-handoff
+          848 7a7bee120e74d78ebadf5d13c49406684f8c7371 commit-storage-modified
+          852 72418f61d1ad15c64159f2bc48de536ee85c92c4 chunks-directory-imalloc
+          854 73f97c028341cad582255ed8fb4423833e4552d2 recrypt-fsync-new-directory
+          856 f8e1a58d14d8e57fd3df348c8232d5f8787b0f59 writeq-cancel-terminate
+          858 193f5e0633c89a24ccb57b6bf262ae475b2d8197 nodata-empty-buffer
+          860 cafecc3ad9079b414bbc2ff941d6f87651b6a623 sigquit-volatile
+          862 0e21682724928ab30df270730ab1e6f7aa1dc456 patricia-unsigned-shift
+          EOF
+          while read -r number sha branch; do
+            git fetch --no-tags --depth=1 origin "$sha"
+            git diff --binary "$BASE" "$sha" > "export/pr$number.patch"
+            git ls-tree -r "$sha" > "export/pr$number-tree.txt"
+          done < export/heads.tsv
+          cd export
+          sha256sum * > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astra-batch2-pinned-source
+          path: export/
+          retention-days: 14
+          if-no-files-found: error
