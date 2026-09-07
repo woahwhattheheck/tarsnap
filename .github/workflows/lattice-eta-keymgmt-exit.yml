@@ -1,0 +1,46 @@
+name: LATTICE-ETA PR850 exit-status regression
+
+on:
+  push:
+    branches:
+      - review/lattice-eta-850-20260906
+    paths:
+      - review-tests/keymgmt_exit_status.py
+      - .github/workflows/lattice-eta-keymgmt-exit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lattice-eta-pr850-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exit-status:
+    if: github.repository == 'woahwhattheheck/tarsnap'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout test-only review branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7, verified 2026-09-07 UTC
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install documented build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential autoconf automake autoconf-archive libssl-dev zlib1g-dev e2fslibs-dev pkg-config
+      - name: Verify source and exercise actual before-after binaries
+        env:
+          CC: gcc
+          LC_ALL: C
+        run: python3 review-tests/keymgmt_exit_status.py --output "$RUNNER_TEMP/pr850-evidence"
+      - name: Preserve raw build logs and structured outcomes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified 2026-09-07 UTC
+        with:
+          name: lattice-eta-pr850-exit-status
+          path: ${{ runner.temp }}/pr850-evidence/
+          if-no-files-found: error
+          retention-days: 30
