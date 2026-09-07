@@ -12,6 +12,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Install native build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libext2fs-dev libbz2-dev zlib1g-dev libssl-dev
       - name: Configure public source
         shell: bash
         run: |
@@ -19,6 +25,8 @@ jobs:
           mkdir -p evidence
           gcc --version > evidence/environment.txt
           uname -a >> evidence/environment.txt
+          dpkg-query -W libext2fs-dev libbz2-dev zlib1g-dev libssl-dev >> evidence/environment.txt
+          git fetch --no-tags --depth=1 origin 0bf0b299fed91139044c81cc6fcdc5521c34d235
           autoreconf -i > evidence/autoreconf.log 2>&1
           ./configure --without-lzma > evidence/configure.log 2>&1
       - name: Execute exact published regression suites
