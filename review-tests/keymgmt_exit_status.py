@@ -195,6 +195,9 @@ def main() -> int:
                 worktrees.append(source)
                 command(["autoreconf", "-i"], cwd=source, log=log)
                 command(["./configure"], cwd=source, log=log)
+                # Automake BUILT_SOURCES are built automatically by 'all', but
+                # not by this standalone executable target on a clean checkout.
+                command(["make", "-j2", "apisupport-config.h", "cpusupport-config.h"], cwd=source, log=log)
                 command(["make", "-j2", "tarsnap-keymgmt"], cwd=source, log=log)
                 binary = source / "tarsnap-keymgmt"
                 if git(source, "diff", "--", SOURCE):
