@@ -23,6 +23,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install the configure prerequisite
+        timeout-minutes: 3
+        run: |
+          mkdir -p evidence
+          sudo apt-get update -qq > evidence/apt-update.log 2>&1
+          sudo apt-get install --no-install-recommends -y libext2fs-dev > evidence/apt-install.log 2>&1
       - name: Configure the actual source checkout
         run: |
           mkdir -p evidence/source
@@ -30,11 +36,11 @@ jobs:
           test "$(git hash-object tar/ccache/ccache_read.c)" = 0156cdeea371dd535a1b7f6e49836b439284aa92
           test "$(git rev-parse 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c)" = 18afc8338dc5676a4d2cf177af4f740f9308bf08
           git diff --check 0bf0b299fed91139044c81cc6fcdc5521c34d235 HEAD
+          cp tar/ccache/ccache_read.c evidence/source/candidate.c
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c > evidence/source/original.c
           autoreconf -i > evidence/autoreconf.log 2>&1
           ./configure > evidence/configure.log 2>&1
           python -m py_compile tests/regressions/pr832/run.py
-          cp tar/ccache/ccache_read.c evidence/source/candidate.c
-          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c > evidence/source/original.c
           cp config.h evidence/source/config.h
       - name: Native, sanitized and independent negative-control executions
         run: |
