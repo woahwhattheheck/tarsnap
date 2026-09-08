@@ -1,0 +1,79 @@
+name: ASTRA PR828 native append validation
+on:
+  push:
+    branches: [ci/astra-pr828-append-20260908]
+    paths: [.github/workflows/astra-pr828-append.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-append:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1562d164e8026f9bd1429aa97019c671f05a89c3
+          fetch-depth: 8
+          persist-credentials: false
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Verify exact contribution bytes
+        run: |
+          mkdir -p evidence/tests
+          git rev-parse HEAD > evidence/checkout.txt
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-head.txt
+          git ls-tree -r HEAD tar/write.c tests/regressions/pr828 > evidence/tested-blobs.txt
+          test "$(git rev-parse HEAD:tar/write.c)" = 5511a8effd072804af97988666d0915e26c02100
+          test "$(git rev-parse HEAD:tests/regressions/pr828/append.c)" = d566d3213b416dccdf02addbcb2ef0b43b40ab69
+          test "$(git rev-parse HEAD:tests/regressions/pr828/fixture.mk)" = 6e0ea0a74504252bdfd699142eadfadc849b2613
+          test "$(git rev-parse HEAD:tests/regressions/pr828/run.py)" = 9ddca38c95c5637202138aeaebcd28cb64478a2c
+          test "$(git rev-parse HEAD:tests/regressions/pr828/controls.py)" = 6bd517fd0683fde368f8cfc7bd777d718934a2c1
+          test "$(git rev-parse HEAD:tests/regressions/pr828/README.md)" = cc645c2c8367701014e22df25cfa6fa650243c2f
+          git diff --check 9ff7899fb170dbc5c55e1d027097bdf50ce055e5 HEAD
+          git diff --name-only 9ff7899fb170dbc5c55e1d027097bdf50ce055e5 HEAD > evidence/added-paths.txt
+          test "$(wc -l < evidence/added-paths.txt)" = 5
+          cp tests/regressions/pr828/* evidence/tests/
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/write.c > evidence/baseline.c
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+      - name: Configure and build actual native project
+        run: |
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          printf 'One complete native PR828 build and five offline version checks; no full make test or live server.\n' > evidence/native-result.txt
+      - name: Real native-linked append scenarios
+        run: |
+          python3 tests/regressions/pr828/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr828/run.py --cc clang --output evidence/candidate-clang.json
+          python3 -m py_compile tests/regressions/pr828/run.py tests/regressions/pr828/controls.py
+      - name: Exact baseline and independent lifetime controls
+        run: |
+          python3 tests/regressions/pr828/controls.py --baseline evidence/baseline.c --output evidence/controls
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          for name in ['candidate-gcc', 'candidate-clang']:
+              result = json.loads(Path('evidence', name+'.json').read_text())
+              assert result['cases'] == result['passed'] == 36 and result['failed'] == 0
+              assert result['source_blob'] == '5511a8effd072804af97988666d0915e26c02100'
+              assert all(row['live']==row['late_error_reads']==row['duplicate_finishes']==row['bad_returns']==0 and row['peak']==1 for row in result['results'])
+          print('Native-linked candidate and exact baseline/four mutations validated.')
+          PY
+      - name: Evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr828-validated-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
