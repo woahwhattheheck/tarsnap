@@ -1,0 +1,45 @@
+name: ASTRA PR838 cleanup validation
+on:
+  push:
+    branches: [ci/astra-pr838-cleanup-20260908]
+    paths:
+      - .github/workflows/astra-pr838-cleanup.yml
+      - tests/regressions/pr838/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bebf285f6c36f266e64edad064260411f3936b44
+          persist-credentials: false
+      - name: Preserve exact public source and identity
+        run: |
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/checkout.txt
+          git ls-tree HEAD tar/multitape/multitape_metadata.c > evidence/source-blob.txt
+          git archive --format=tar.gz HEAD > evidence/source.tar.gz
+          cc --version > evidence/compiler.txt
+      - name: Configure and build original submission
+        shell: bash
+        run: |
+          set -euo pipefail
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          find . -name config.h -not -path './evidence/*' -print -exec cp --parents '{}' evidence/ \;
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          printf 'Native build and five version smoke checks passed. No server or account tests executed.\n' > evidence/native-result.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr838-source-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
