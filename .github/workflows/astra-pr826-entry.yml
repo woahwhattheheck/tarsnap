@@ -1,0 +1,81 @@
+name: ASTRA PR826 native cache-entry validation
+on:
+  push:
+    branches: [ci/astra-pr826-entry-20260908]
+    paths: [.github/workflows/astra-pr826-entry.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-entry:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 06b0acfd2ef8fa18cf5dec05cb9aa93025a8ee4c
+          fetch-depth: 8
+          persist-credentials: false
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Verify exact contribution bytes
+        run: |
+          mkdir -p evidence/tests
+          git rev-parse HEAD > evidence/checkout.txt
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-head.txt
+          git ls-tree -r HEAD tar/write.c tar/ccache/ccache_entry.c tests/regressions/pr826 > evidence/tested-blobs.txt
+          test "$(git rev-parse HEAD:tar/write.c)" = 1fabdbf5c451004af7d805b4edd2ddb254f911c3
+          test "$(git rev-parse HEAD:tar/ccache/ccache_entry.c)" = ed5f571ebb43ba77c2db2f1072a6c347a29cb41b
+          test "$(git rev-parse HEAD:tests/regressions/pr826/entry.c)" = 6e307becead7e2623704aa849e688e3c9a4c473b
+          test "$(git rev-parse HEAD:tests/regressions/pr826/fixture.mk)" = ee7477c2eb8fd91e0d2b014a67053aae1209ead2
+          test "$(git rev-parse HEAD:tests/regressions/pr826/run.py)" = d472056f2274028779844dc93ee2042354e7fd82
+          test "$(git rev-parse HEAD:tests/regressions/pr826/controls.py)" = a6185a3c390f125ffdec3161403fabc4f6aa8331
+          test "$(git rev-parse HEAD:tests/regressions/pr826/README.md)" = dbb1ead0ecd642afbd18926cd11673c42df8431d
+          git diff --check 22c60e02fb99b1c7b378acbdf5144eadeb8f446e HEAD
+          git diff --name-only 22c60e02fb99b1c7b378acbdf5144eadeb8f446e HEAD > evidence/added-paths.txt
+          test "$(wc -l < evidence/added-paths.txt)" = 5
+          cp tests/regressions/pr826/* evidence/tests/
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/write.c > evidence/baseline.c
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+      - name: Configure and build actual native project
+        run: |
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          printf 'One complete native PR826 build and five offline version checks; no full make test or live server.\n' > evidence/native-result.txt
+      - name: Actual native cache-entry scenarios
+        run: |
+          python3 tests/regressions/pr826/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr826/run.py --cc clang --output evidence/candidate-clang.json
+          python3 -m py_compile tests/regressions/pr826/run.py tests/regressions/pr826/controls.py
+      - name: Exact baseline and independent cleanup controls
+        run: |
+          python3 tests/regressions/pr826/controls.py --baseline evidence/baseline.c --output evidence/controls
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          for name in ['candidate-gcc', 'candidate-clang']:
+              result = json.loads(Path('evidence', name+'.json').read_text())
+              assert result['cases'] == result['passed'] == 88 and result['failed'] == 0
+              assert result['source_blob'] == '1fabdbf5c451004af7d805b4edd2ddb254f911c3'
+              assert result['cache_source_blob'] == 'ed5f571ebb43ba77c2db2f1072a6c347a29cb41b'
+              assert all(row['live']==row['wrong_cookie']==row['invalid_free']==row['open_files']==0 and row['tree_preserved'] for row in result['results'])
+          print('Native candidate matrices and exact original/two cleanup controls validated.')
+          PY
+      - name: Evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr826-validated-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
