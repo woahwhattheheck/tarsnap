@@ -13,33 +13,60 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: c0e720da748400d198c46891a6b40073ab1c1d4b
-          fetch-depth: 2
+          ref: ddcdf19467fb0e5382fd6c9b991ec30ca71cde46
+          fetch-depth: 8
           persist-credentials: false
       - name: Disposable runner dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
-      - name: Exact source and configuration
+      - name: Verify exact tested bytes
         run: |
-          mkdir -p evidence
+          mkdir -p evidence/tests
           git rev-parse HEAD > evidence/checkout.txt
-          git ls-tree HEAD tar/ccache/ccache_write.c > evidence/tested-source.txt
-          git archive HEAD | gzip -n > evidence/source.tar.gz
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-head.txt
+          git ls-tree HEAD tar/ccache/ccache_write.c tests/regressions/pr830/cache_write.c tests/regressions/pr830/run.py tests/regressions/pr830/controls.py tests/regressions/pr830/README.md > evidence/tested-blobs.txt
+          test "$(git rev-parse HEAD:tar/ccache/ccache_write.c)" = 55f3e58200d435ee5b135740bc4fd83e06b10a36
+          test "$(git rev-parse HEAD:tests/regressions/pr830/cache_write.c)" = 187ee009df35cf441c9387170a082f90ea444723
+          test "$(git rev-parse HEAD:tests/regressions/pr830/run.py)" = ac425ca854225d851ba5db43f6d961c7d0a1aad7
+          test "$(git rev-parse HEAD:tests/regressions/pr830/controls.py)" = 74b4d799f8a412ca8a33be32c0654393436e7f90
+          test "$(git rev-parse HEAD:tests/regressions/pr830/README.md)" = c7f1f5514ea412d763501df73605d42ea92cfd19
+          git diff --check c0e720da748400d198c46891a6b40073ab1c1d4b HEAD
+          git diff --name-only c0e720da748400d198c46891a6b40073ab1c1d4b HEAD > evidence/added-paths.txt
+          test "$(wc -l < evidence/added-paths.txt)" = 4
+          cp tests/regressions/pr830/* evidence/tests/
           git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_write.c > evidence/baseline.c
-          autoreconf -i > evidence/autoreconf.log 2>&1
-          ./configure > evidence/configure.log 2>&1
-          cp config.h evidence/config.h
-          cp apisupport-config.h cpusupport-config.h evidence/
           cc --version > evidence/compiler-gcc.txt
           clang --version > evidence/compiler-clang.txt
-      - name: Native build and offline smoke
+      - name: Configure real checkout
+        run: |
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+      - name: Actual writer regression matrix
+        run: |
+          python3 tests/regressions/pr830/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr830/run.py --cc clang --output evidence/candidate-clang.json
+          python3 tests/regressions/pr830/run.py --cc clang --sanitize --auto-init-pattern --output evidence/candidate-sanitized.json
+          python3 -m py_compile tests/regressions/pr830/run.py tests/regressions/pr830/controls.py
+      - name: Exact baseline and independent cleanup controls
+        run: |
+          python3 tests/regressions/pr830/controls.py --baseline evidence/baseline.c --output evidence/controls
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ['candidate-gcc', 'candidate-clang', 'candidate-sanitized']:
+              result = json.loads(Path('evidence', name+'.json').read_text())
+              assert result['cases'] == result['passed'] == 113 and result['failed'] == 0
+              assert result['source_blob'] == '55f3e58200d435ee5b135740bc4fd83e06b10a36'
+          print('All candidate matrices and five exact distinguishing controls validated.')
+          PY
+      - name: Native build and five offline version checks
         run: |
           make -j2 > evidence/native-build.log 2>&1
           for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
             ./$binary --version >> evidence/native-smoke.log 2>&1
           done
-          printf 'Exact original PR830 native build and five offline version checks; regression fixtures are not included in this preparatory run.\n' > evidence/scope.txt
+          printf 'One native PR830 build and five offline version checks passed; no make test or live service.\n' > evidence/native-result.txt
       - name: Evidence manifest
         if: always()
         run: |
@@ -47,7 +74,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: astra-pr830-source-${{ github.run_id }}
+          name: astra-pr830-validated-${{ github.run_id }}
           path: evidence/
           retention-days: 14
           if-no-files-found: error
