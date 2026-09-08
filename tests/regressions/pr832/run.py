@@ -100,6 +100,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--source', type=Path)
+    parser.add_argument('--patricia-source', type=Path,
+                        help='Explicit dependency source for a labeled composition run')
     parser.add_argument('--cc', default=os.environ.get('CC', 'cc'))
     parser.add_argument('--mode', choices=['read', 'mmap'], required=True)
     parser.add_argument('--sanitize', action='store_true')
@@ -107,6 +109,7 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root.resolve()
     source = (args.source or root / READER).resolve()
+    patricia = (args.patricia_source or root / 'lib/datastruct/patricia.c').resolve()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     report = dict(status='error', mode=args.mode, compiler=args.cc,
@@ -115,6 +118,8 @@ def main() -> int:
         if not (root / 'config.h').is_file():
             raise ValueError('Run autoreconf -i and ./configure before the regression.')
         report['source'] = identity(source)
+        report['patricia_source'] = identity(patricia)
+        report['dependency_override'] = args.patricia_source is not None
         report['fixture'] = identity(Path(__file__).with_name('cache_read.c'))
         report['runner'] = identity(Path(__file__))
         includes = [root, root / 'lib-platform', root / 'libcperciva/util',
@@ -135,7 +140,7 @@ def main() -> int:
             command += ['-I' + str(path) for path in includes]
             command += ['-DCCACHE_SOURCE=' + json.dumps(str(source)),
                         str(Path(__file__).with_name('cache_read.c')),
-                        str(root / 'lib/datastruct/patricia.c'),
+                        str(patricia),
                         str(root / 'libcperciva/util/asprintf.c'),
                         str(root / 'libcperciva/util/warnp.c'), '-o', str(binary)]
             report['compile_command'] = command
