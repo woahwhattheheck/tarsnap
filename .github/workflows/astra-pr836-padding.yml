@@ -1,0 +1,94 @@
+name: ASTRA PR836 padding validation
+on:
+  push:
+    branches: [ci/astra-pr836-padding-20260908]
+    paths:
+      - .github/workflows/astra-pr836-padding.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  padding-validation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 39a299ce94e807d359d0cee423ddda3378972f9b
+          fetch-depth: 8
+          persist-credentials: false
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Pin the actual tested bytes
+        run: |
+          mkdir -p evidence/tests
+          git rev-parse HEAD > evidence/checkout.txt
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-head.txt
+          git ls-tree HEAD tar/chunks/chunks_write.c tests/regressions/pr836/padding.c tests/regressions/pr836/run.py tests/regressions/pr836/README.md > evidence/tested-blobs.txt
+          test "$(git rev-parse HEAD:tar/chunks/chunks_write.c)" = 2bf28840ec0a7283c80296c47143f7a132b37499
+          test "$(git rev-parse HEAD:tests/regressions/pr836/padding.c)" = 01403b2133f8d670246dce7523aa558552a346cb
+          test "$(git rev-parse HEAD:tests/regressions/pr836/run.py)" = e9b9067c422456788717d8852376f55da68c7725
+          cp tests/regressions/pr836/* evidence/tests/
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+          python3 --version > evidence/python.txt
+      - name: Configure checkout
+        run: |
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+      - name: Real helper versus integer oracle
+        run: |
+          python3 tests/regressions/pr836/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr836/run.py --cc clang --output evidence/candidate-clang.json
+          python3 tests/regressions/pr836/run.py --cc clang --sanitize --output evidence/candidate-ubsan.json
+      - name: Exact pre-fix scalar and UBSan controls
+        shell: bash
+        run: |
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/chunks/chunks_write.c > evidence/baseline.c
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, subprocess
+          source = Path('evidence/baseline.c').read_bytes()
+          assert hashlib.sha1(b'blob '+str(len(source)).encode()+b'\0'+source).hexdigest() == '503f772b1a4095a7936efb9d94f95beede1b883c'
+          command = ['python3', 'tests/regressions/pr836/run.py', '--source', 'evidence/baseline.c']
+          native = subprocess.run(command + ['--output', 'evidence/baseline-gcc.json'], capture_output=True, text=True, timeout=90)
+          Path('evidence/baseline-gcc.log').write_text(native.stdout+native.stderr)
+          # Undefined unsanitized behavior is measured, not specified as a fixed result.
+          assert native.returncode in (0, 1), native.stderr+native.stdout
+          for length, diagnostic in [(137438953472, '31'), (274877906944, '32')]:
+              path = 'evidence/baseline-'+str(length)
+              result = subprocess.run(command + ['--cc', 'clang', '--sanitize', '--probe', str(length), '--output', path+'.json'], capture_output=True, text=True, timeout=90)
+              Path(path+'.log').write_text(result.stdout+result.stderr)
+              assert result.returncode == 1, (length, result.returncode, result.stdout, result.stderr)
+              report = json.loads(Path(path+'.json').read_text())
+              assert report['size_bits'] == 64 and report['int_bits'] == 32
+              assert not report['passed'] and report['exit_code'] != 0
+              assert 'runtime error:' in report['diagnostics'] and diagnostic in report['diagnostics'] and 'int' in report['diagnostics']
+          for name in ['candidate-gcc', 'candidate-clang', 'candidate-ubsan']:
+              report = json.loads(Path('evidence', name+'.json').read_text())
+              assert report['passed'] and report['cases'] == report['matched'] == 16266
+              assert report['input_sha256'] == 'b7e6dd234f58a5a2caa547d84cf0bc4e54977892fae6dedae83eda8e50d52331'
+          print('Both original-source shift boundaries diagnosed; all fixed-source oracle vectors pass.')
+          PY
+      - name: Native project build and five offline version checks
+        run: |
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          printf 'One native PR836 build and five offline version checks passed. No make test or server/account run.\n' > evidence/native-result.txt
+      - name: Manifest the evidence
+        if: always()
+        run: |
+          if test -d evidence; then
+            (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr836-validated-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
