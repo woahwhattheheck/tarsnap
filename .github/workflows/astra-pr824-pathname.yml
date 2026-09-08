@@ -1,0 +1,97 @@
+name: ASTRA PR824 native pathname evidence
+on:
+  push:
+    branches: [ci/astra-pr824-pathname-20260908]
+    paths: [.github/workflows/astra-pr824-pathname.yml]
+permissions:
+  contents: read
+jobs:
+  native-behavior-and-sanitizer-limits:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    env:
+      LC_ALL: C
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a8efda198fe8ceb7f9cf3be5c5d4078d4305b5c8
+          fetch-depth: 3
+          persist-credentials: false
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libext2fs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Verify exact source and six additive test files
+        run: |
+          mkdir -p evidence/tests
+          git rev-parse HEAD > evidence/checkout.txt
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-head.txt
+          test "$(git rev-parse HEAD)" = a8efda198fe8ceb7f9cf3be5c5d4078d4305b5c8
+          test "$(git rev-parse HEAD^{tree})" = bf263dede7f4675bf1a3fca63a7b3980a967cc16
+          test "$(git rev-parse HEAD:tar/util.c)" = 8b6a162b7835cffcd59c7ae3c39d77ec3002bbaf
+          git ls-tree -r HEAD > evidence/source-blobs.txt
+          git diff --check 707dbc28141a79ab216676a2e20aa77aaed371b8 HEAD
+          git diff --name-only 707dbc28141a79ab216676a2e20aa77aaed371b8 HEAD > evidence/added-paths.txt
+          test "$(wc -l < evidence/added-paths.txt)" = 6
+          test "$(grep -c '^tests/regressions/pr824/' evidence/added-paths.txt)" = 6
+          cp tests/regressions/pr824/* evidence/tests/
+          cp tar/util.c evidence/candidate.c
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/util.c > evidence/baseline.c
+          git archive --format=tar HEAD | gzip -n > evidence/source.tar.gz
+          gcc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+      - name: Configure and build complete native project
+        run: |
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          if grep -q 'command not found' evidence/configure.log; then exit 1; fi
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+      - name: Full native scenarios and independent original controls
+        run: |
+          python3 tests/regressions/pr824/run.py --cc gcc --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr824/run.py --cc clang --output evidence/candidate-clang.json
+          python3 tests/regressions/pr824/controls.py --cc gcc --output evidence/controls
+          cmp evidence/baseline.c evidence/controls/baseline.c
+          python3 -m py_compile tests/regressions/pr824/*.py
+      - name: Capture full sanitizer failures without suppressions
+        run: |
+          set +e
+          python3 tests/regressions/pr824/run.py --cc clang --sanitize --output evidence/candidate-sanitized.json
+          candidate_status=$?
+          python3 tests/regressions/pr824/run.py --cc clang --sanitize --source evidence/baseline.c --output evidence/baseline-sanitized.json
+          baseline_status=$?
+          set -e
+          printf 'candidate=%s\nbaseline=%s\n' "$candidate_status" "$baseline_status" > evidence/sanitizer-exits.txt
+          test "$candidate_status" = 1
+          test "$baseline_status" = 1
+          python3 tests/regressions/pr824/sanitizer_audit.py --candidate evidence/candidate-sanitized.json --baseline evidence/baseline-sanitized.json --output evidence/sanitizer-limitations.json
+      - name: Source-specific result summary
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          for name in ('candidate-gcc', 'candidate-clang'):
+              r = json.loads(Path('evidence', name+'.json').read_text())
+              assert r['cases'] == r['passed'] == 156 and r['failed'] == 0
+              assert r['source_blob'] == '8b6a162b7835cffcd59c7ae3c39d77ec3002bbaf'
+          text = 'Native callers: 156/156 each. Exact original: 50 failures. Full sanitizer suites: FAIL, candidate 128/156 versus original 84/156; same 28 hardlink/regex dependency findings retained. One native project build; five offline version checks. No full repository suite or live archive/server test.\n'
+          Path('evidence/result.txt').write_text(text)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('## PR824 source-bound result\n' + text)
+          PY
+          git diff --exit-code HEAD
+      - name: Evidence manifest
+        if: always()
+        run: |
+          mkdir -p evidence
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr824-evidence-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
