@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: b57d15fb6b46621bca6594d904831c75146f2fbc
+          ref: ad1df1452f5878f68e1bf1559c70d8793cfc74f0
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@v5
@@ -29,22 +29,25 @@ jobs:
           mkdir -p evidence
           sudo apt-get update -qq > evidence/apt-update.log 2>&1
           sudo apt-get install --no-install-recommends -y libext2fs-dev > evidence/apt-install.log 2>&1
-      - name: Configure the actual source checkout
+      - name: Configure and identify the actual source inputs
         run: |
           mkdir -p evidence/source
-          test "$(git rev-parse HEAD)" = b57d15fb6b46621bca6594d904831c75146f2fbc
+          test "$(git rev-parse HEAD)" = ad1df1452f5878f68e1bf1559c70d8793cfc74f0
           test "$(git hash-object tar/ccache/ccache_read.c)" = 0156cdeea371dd535a1b7f6e49836b439284aa92
           test "$(git rev-parse 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c)" = 18afc8338dc5676a4d2cf177af4f740f9308bf08
-          test "$(git hash-object tests/regressions/pr832/run.py)" = dc09f3247a74815543f067719e80aaaec95dc9a1
+          test "$(git hash-object tests/regressions/pr832/run.py)" = 05f8d9e95caf4c602bc4105b9843bd4b39edb51a
           test "$(git hash-object tests/regressions/pr832/cache_read.c)" = bb0475dcb30e0323e63df282a726da1feb9f891d
+          test "$(git hash-object lib/datastruct/patricia.c)" = 5347cd0c9e479aa159015290c5afd0d472667a65
+          test "$(git rev-parse 1bc8e0b53e823280db53dae2f3c110c3fc8cbd15:lib/datastruct/patricia.c)" = 74313d08070d4acc24d0aa64d12ccb484c1d6ec5
           git diff --check 0bf0b299fed91139044c81cc6fcdc5521c34d235 HEAD
           cp tar/ccache/ccache_read.c evidence/source/candidate.c
           git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c > evidence/source/original.c
+          git show 1bc8e0b53e823280db53dae2f3c110c3fc8cbd15:lib/datastruct/patricia.c > evidence/source/pr862-patricia.c
           autoreconf -i > evidence/autoreconf.log 2>&1
           ./configure > evidence/configure.log 2>&1
           python -m py_compile tests/regressions/pr832/run.py
           cp config.h evidence/source/config.h
-      - name: Native, sanitized and independent negative-control executions
+      - name: Native cases, exact failures and separate sanitized composition
         run: |
           python - <<'PY'
           import json
@@ -63,27 +66,31 @@ jobs:
           (evidence / 'source/no-empty-read-guard.c').write_text(current.replace(read_before, 'if (fread(C->data, C->datalen, 1, R.f) != 1) {'))
           leak_cases = {'duplicate-key', 'insert-failure-first', 'insert-failure-middle', 'insert-failure-last'}
           empty_cases = {'empty-cache', 'empty-cache-null-zero-allocation'}
+          inherited_ubsan = {'three-records', 'mixed-chunks-and-trailers', 'insert-failure-last'}
           outcomes = []
           problems = []
           plans = []
           for mode in ('read', 'mmap'):
               plans.extend([
-                  (f'candidate-gcc-{mode}', reader, 'gcc', mode, False, set()),
-                  (f'candidate-clang-{mode}', reader, 'clang', mode, False, set()),
-                  (f'candidate-sanitized-{mode}', reader, 'clang', mode, True, set()),
+                  (f'candidate-gcc-{mode}', reader, 'gcc', mode, False, set(), False),
+                  (f'candidate-clang-{mode}', reader, 'clang', mode, False, set(), False),
+                  (f'candidate-ubsan-inherited-{mode}', reader, 'clang', mode, True, inherited_ubsan, False),
+                  (f'candidate-with-pr862-sanitized-{mode}', reader, 'clang', mode, True, set(), True),
                   (f'original-{mode}', evidence / 'source/original.c', 'gcc', mode, False,
-                   leak_cases | (empty_cases if mode == 'read' else set())),
-                  (f'no-record-free-{mode}', evidence / 'source/no-record-free.c', 'gcc', mode, False, leak_cases),
+                   leak_cases | (empty_cases if mode == 'read' else set()), False),
+                  (f'no-record-free-{mode}', evidence / 'source/no-record-free.c', 'gcc', mode, False, leak_cases, False),
                   (f'no-empty-read-guard-{mode}', evidence / 'source/no-empty-read-guard.c', 'gcc', mode, False,
-                   empty_cases if mode == 'read' else set()),
+                   empty_cases if mode == 'read' else set(), False),
               ])
-          for name, source, compiler, mode, sanitized, failures in plans:
+          for name, source, compiler, mode, sanitized, failures, composed in plans:
               destination = evidence / name
               destination.mkdir()
               command = [sys.executable, 'tests/regressions/pr832/run.py', '--source', str(source),
                          '--cc', compiler, '--mode', mode, '--output', str(destination)]
               if sanitized:
                   command.append('--sanitize')
+              if composed:
+                  command.extend(['--patricia-source', str(evidence / 'source/pr862-patricia.c')])
               executed = subprocess.run(command, text=True, capture_output=True, timeout=180)
               (destination / 'driver.stdout.txt').write_text(executed.stdout)
               (destination / 'driver.stderr.txt').write_text(executed.stderr)
@@ -91,24 +98,44 @@ jobs:
               report = json.loads(report_file.read_text()) if report_file.exists() else {}
               actual = set(report.get('failed_cases', []))
               expected_code = 1 if failures else 0
+              dependency_blob = '74313d08070d4acc24d0aa64d12ccb484c1d6ec5' if composed else '5347cd0c9e479aa159015290c5afd0d472667a65'
               valid = (executed.returncode == expected_code and actual == failures
                        and len(report.get('cases', [])) == 22
-                       and report.get('status') == ('failed' if failures else 'passed'))
+                       and report.get('status') == ('failed' if failures else 'passed')
+                       and report.get('patricia_source', {}).get('git_blob') == dependency_blob
+                       and report.get('dependency_override') == composed)
               for case in report.get('cases', []):
-                  if case['name'] in leak_cases and case['name'] in failures:
+                  if 'ubsan-inherited' in name and case['name'] in failures:
+                      diagnostic = (destination / (case['name'] + '.stderr.txt')).read_text()
+                      valid = valid and 'patricia.c:' in diagnostic
+                      valid = valid and 'left shift of negative value' in diagnostic
+                      valid = valid and case['returncode'] != 0
+                  elif case['name'] in leak_cases and case['name'] in failures:
                       observed = case.get('observed', {})
                       valid = valid and observed.get('live_allocations') == 1
                       valid = valid and observed.get('live_bytes') == report['layout']['record_size']
               outcomes.append(dict(name=name, matched_expected=valid, returncode=executed.returncode,
+                                   composed_with_pr862=composed, patricia_blob=dependency_blob,
                                    expected_failed_cases=sorted(failures), actual_failed_cases=sorted(actual),
                                    case_count=len(report.get('cases', [])), error=report.get('error')))
               print(json.dumps(outcomes[-1], sort_keys=True), flush=True)
               if not valid:
                   problems.append(name)
           (evidence / 'summary.json').write_text(json.dumps(dict(status='passed' if not problems else 'failed',
+              interpretation='Match the declared positive and negative outcomes; inherited UBSan failures are not green standalone runs.',
               outcomes=outcomes, problems=problems), indent=2) + '\n')
           assert not problems, problems
-          print('All 12 configurations match their declared outcomes; candidate 22/22 on six native/sanitized builds.')
+          print('14 declared outcomes verified: native PR832 22/22 on four builds; PR832+PR862 22/22 on two sanitized builds; standalone UBSan and old-reader failures preserved.')
+          PY
+      - name: Hash every retained evidence file
+        if: always()
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root = Path('evidence')
+          files = [p for p in sorted(root.rglob('*')) if p.is_file() and p.name != 'SHA256SUMS']
+          (root / 'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + str(p.relative_to(root)) + '\n' for p in files))
           PY
       - name: Preserve exact source, fixtures, real files and execution results
         if: always()
@@ -128,6 +155,8 @@ jobs:
             libcperciva/util/warnp.h
             libcperciva/util/ctassert.h
             libcperciva/util/sysendian.h
+            lib/crypto/crypto.h
+            libcperciva/crypto/sha256.h
             tar/ccache/ccache_internal.h
             tar/ccache/ccache.h
             tar/multitape/multitape_internal.h
