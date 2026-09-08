@@ -1,0 +1,111 @@
+name: PR836 native padme validation
+
+on:
+  push:
+    branches: [review/astra-quay-padme-836-20260908]
+    paths:
+      - .github/workflows/astra-quay-padme-836.yml
+      - review-tests/padme_shift_replay.py
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a4ee18690346441c5f043e616339491962891d45
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin the actual candidate, original source and runner
+        run: |
+          test "$(git rev-parse HEAD)" = a4ee18690346441c5f043e616339491962891d45
+          test "$(git hash-object tar/chunks/chunks_write.c)" = 2bf28840ec0a7283c80296c47143f7a132b37499
+          test "$(git rev-parse 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/chunks/chunks_write.c)" = 503f772b1a4095a7936efb9d94f95beede1b883c
+          echo '1f6285b9b0bf7836a2071bba44b96dab0adcf6ce20c72a6cf74cb29f3144137f  review-tests/padme_shift_replay.py' | sha256sum -c -
+          git diff --check 0bf0b299fed91139044c81cc6fcdc5521c34d235 HEAD
+          python -m py_compile review-tests/padme_shift_replay.py
+          mkdir -p evidence/source
+          cp tar/chunks/chunks_write.c evidence/source/candidate-chunks_write.c
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/chunks/chunks_write.c > evidence/source/baseline-chunks_write.c
+          git rev-parse HEAD > evidence/source/candidate-commit.txt
+      - name: Native integer oracle and actual pre-fix UBSan controls
+        run: |
+          python review-tests/padme_shift_replay.py \
+            --baseline-ref 0bf0b299fed91139044c81cc6fcdc5521c34d235 \
+            --cc gcc --cc clang --output-dir evidence/native
+      - name: Check complete source-bound results and reject deliberate mutations
+        run: |
+          python - <<'PY'
+          import importlib.util
+          import json
+          from pathlib import Path
+          import subprocess
+          import sys
+          runner = Path('review-tests/padme_shift_replay.py').resolve()
+          spec = importlib.util.spec_from_file_location('padme_replay', runner)
+          replay = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(replay)
+          report = json.loads(Path('evidence/native/report.json').read_text())
+          assert report['status'] == 'passed'
+          assert report['baseline_controls'] == 'passed'
+          assert len(report['configurations']) == 4
+          assert report['candidate']['git_blob_sha1'] == '2bf28840ec0a7283c80296c47143f7a132b37499'
+          assert report['baseline']['git_blob_sha1'] == '503f772b1a4095a7936efb9d94f95beede1b883c'
+          assert report['candidate']['helper_sha256'] == '5b98bfa418376859beb3aa3c9a3097aef7054b37cf1509e83bae2b1453a9cc18'
+          for config in report['configurations']:
+              assert config['status'] == 'passed'
+              assert config['size_t_bits'] == 64 and config['int_bits'] == 32
+              assert config['candidate_cases'] == 20192
+              assert config['baseline_safe_cases'] == 2909
+              assert len(config['baseline_undefined_shift_controls']) == 2
+          source = Path('tar/chunks/chunks_write.c').read_text()
+          changes = {
+              'narrow-shift': ('((size_t)1 << (e - s))', '(1 << (e - s))'),
+              'missing-clamp': ('if (plen > maxlen)', 'if (0 && plen > maxlen)'),
+              'always-zero': ('return (plen - len);', 'return (0);'),
+              'off-by-one': ('return (plen - len);', 'return (plen - len + 1);'),
+          }
+          results = {}
+          for name, (before, after) in changes.items():
+              assert source.count(before) == 1, (name, source.count(before))
+              directory = Path('evidence/mutations') / name
+              directory.mkdir(parents=True, exist_ok=True)
+              changed = directory / 'source.c'
+              changed.write_text(source.replace(before, after))
+              result = subprocess.run([
+                  sys.executable, str(runner), '--source', str(changed),
+                  '--cc', 'gcc', '--output-dir', str(directory / 'result'),
+              ], text=True, capture_output=True, timeout=60)
+              (directory / 'stdout.txt').write_text(result.stdout)
+              (directory / 'stderr.txt').write_text(result.stderr)
+              mutation_report = json.loads((directory / 'result/report.json').read_text())
+              assert result.returncode == 1 and mutation_report['status'] == 'failed', name
+              results[name] = {'rejected': True, 'diagnostic': mutation_report.get('error')}
+          helper = replay.extract_helper(source.encode())
+          for name, bad in [('missing-helper', b'/* no definition */\n'),
+                            ('ambiguous-helper', helper + helper)]:
+              try:
+                  replay.extract_helper(bad)
+              except ValueError:
+                  results[name] = {'rejected': True}
+              else:
+                  raise AssertionError(name)
+          Path('evidence/mutation-controls.json').write_text(json.dumps(results, indent=2) + '\n')
+          print('VERIFIED: 80,768 candidate evaluations; 11,636 safe baseline evaluations; 8 expected UBSan exits; 4 behavior and 2 extraction mutations rejected.')
+          PY
+      - name: Retain reproducible source, input vectors and native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-quay-pr836-native
+          retention-days: 30
+          path: |
+            evidence/
+            review-tests/padme_shift_replay.py
