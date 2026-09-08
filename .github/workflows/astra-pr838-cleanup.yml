@@ -4,42 +4,89 @@ on:
     branches: [ci/astra-pr838-cleanup-20260908]
     paths:
       - .github/workflows/astra-pr838-cleanup.yml
-      - tests/regressions/pr838/**
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  baseline-build:
+  cleanup-validation:
     runs-on: ubuntu-22.04
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: bebf285f6c36f266e64edad064260411f3936b44
+          ref: d6d6aeb2e4c9db931b5148e7fa3e429176c39cf4
+          fetch-depth: 8
           persist-credentials: false
-      - name: Preserve exact public source and identity
+      - name: Build dependencies in this disposable runner
         run: |
-          mkdir -p evidence
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Preserve exact source identity
+        run: |
+          mkdir -p evidence/tests
           git rev-parse HEAD > evidence/checkout.txt
-          git ls-tree HEAD tar/multitape/multitape_metadata.c > evidence/source-blob.txt
-          git archive --format=tar.gz HEAD > evidence/source.tar.gz
-          cc --version > evidence/compiler.txt
-      - name: Configure and build original submission
-        shell: bash
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-head.txt
+          git ls-tree HEAD tar/multitape/multitape_metadata.c tests/regressions/pr838/cleanup.c tests/regressions/pr838/run.py tests/regressions/pr838/README.md > evidence/tested-blobs.txt
+          test "$(git rev-parse HEAD:tar/multitape/multitape_metadata.c)" = 487d27fbc9915f6d4c35f2a2e503395b730e988a
+          test "$(git rev-parse HEAD:tests/regressions/pr838/cleanup.c)" = a26da8767627f66975e3440cb74d20742c00c59c
+          test "$(git rev-parse HEAD:tests/regressions/pr838/run.py)" = d64c348c4542f9b80ad4382daf0fef184838e8af
+          cp tests/regressions/pr838/* evidence/tests/
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+          python3 --version > evidence/python.txt
+      - name: Configure actual checkout
         run: |
-          set -euo pipefail
           autoreconf -i > evidence/autoreconf.log 2>&1
           ./configure > evidence/configure.log 2>&1
-          find . -name config.h -not -path './evidence/*' -print -exec cp --parents '{}' evidence/ \;
+      - name: Positive cleanup matrix and sanitizers
+        run: |
+          python3 tests/regressions/pr838/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr838/run.py --cc clang --output evidence/candidate-clang.json
+          python3 tests/regressions/pr838/run.py --cc clang --sanitize --output evidence/candidate-sanitized.json
+      - name: Exact baseline and independent negative controls
+        shell: bash
+        run: |
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/multitape/multitape_metadata.c > evidence/baseline.c
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, subprocess
+          source = Path('tar/multitape/multitape_metadata.c').read_text()
+          a = '\t    (uint8_t *)mdat->name, strlen(mdat->name), hbuf)) {\n\t\tmultitape_metadata_free(mdat);\n\t\tgoto err0;\n\t}'
+          b = '\tif (crypto_verify_bytes(tapehash, hbuf, 32)) {\n\t\tmultitape_metadata_free(mdat);\n\t\tgoto corrupt;\n\t}'
+          assert source.count(a) == source.count(b) == 1
+          for name, block in [('no-hash-cleanup', a), ('no-mismatch-cleanup', b)]:
+              Path('evidence', name+'.c').write_text(source.replace(block, block.replace('\n\t\tmultitape_metadata_free(mdat);', '')))
+          baseline = Path('evidence/baseline.c').read_bytes()
+          assert hashlib.sha1(b'blob '+str(len(baseline)).encode()+b'\0'+baseline).hexdigest() == 'f715b9dba159edf2be71d517a79d54e29781ebc2'
+          expected = {'baseline': (66, {'mismatch', 'repeat-mismatch', 'hash-error'}), 'no-hash-cleanup': (82, {'hash-error'}), 'no-mismatch-cleanup': (78, {'mismatch', 'repeat-mismatch'})}
+          for name, (passed, scenarios) in expected.items():
+              result = subprocess.run(['python3', 'tests/regressions/pr838/run.py', '--source', 'evidence/'+name+'.c', '--output', 'evidence/'+name+'.json'], capture_output=True, text=True, timeout=90)
+              Path('evidence', name+'.log').write_text(result.stdout+result.stderr)
+              assert result.returncode == 1, (name, result.returncode, result.stdout, result.stderr)
+              report = json.loads(Path('evidence', name+'.json').read_text())
+              failures = [row for row in report['results'] if not row['passed']]
+              assert report['cases'] == 94 and report['passed'] == passed, (name, report)
+              assert {row['scenario'] for row in failures} == scenarios
+              assert all(row['exit_code'] == 1 and row['live_allocations'] > 0 for row in failures)
+          print('Baseline and both independently distinguishing cleanup controls matched.')
+          PY
+      - name: Native build and offline version smoke
+        run: |
           make -j2 > evidence/native-build.log 2>&1
           for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
             ./$binary --version >> evidence/native-smoke.log 2>&1
           done
-          printf 'Native build and five version smoke checks passed. No server or account tests executed.\n' > evidence/native-result.txt
+          printf 'One native build and five version checks passed. No server/account tests.\n' > evidence/native-result.txt
+      - name: Evidence checksums
+        if: always()
+        run: |
+          if test -d evidence; then
+            (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: astra-pr838-source-${{ github.run_id }}
+          name: astra-pr838-validated-${{ github.run_id }}
           path: evidence/
           retention-days: 14
           if-no-files-found: error
