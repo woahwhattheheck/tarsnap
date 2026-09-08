@@ -1,0 +1,16 @@
+name: SOL PR856 validation
+
+on:
+  push:
+    branches:
+      - sol-ci-pr856-eaba875-20260908-01
+
+jobs:
+  writeq-regression:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run standalone write-queue regression
+        run: sh tests/unit/network-writeq.sh .
+      - name: Compile production queue with strict GCC warnings
+        run: cc -std=c99 -O2 -Wall -Wextra -Werror -Wuse-after-free=3 -Ilib/network -Ilib-platform/network -Ilib/util -c lib/network/tsnetwork_writeq.c -o /tmp/tsnetwork_writeq.o
