@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 411051749e8661260b6d36abb2eb4bad98cfe41d
+          ref: b57d15fb6b46621bca6594d904831c75146f2fbc
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@v5
@@ -32,9 +32,11 @@ jobs:
       - name: Configure the actual source checkout
         run: |
           mkdir -p evidence/source
-          test "$(git rev-parse HEAD)" = 411051749e8661260b6d36abb2eb4bad98cfe41d
+          test "$(git rev-parse HEAD)" = b57d15fb6b46621bca6594d904831c75146f2fbc
           test "$(git hash-object tar/ccache/ccache_read.c)" = 0156cdeea371dd535a1b7f6e49836b439284aa92
           test "$(git rev-parse 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c)" = 18afc8338dc5676a4d2cf177af4f740f9308bf08
+          test "$(git hash-object tests/regressions/pr832/run.py)" = dc09f3247a74815543f067719e80aaaec95dc9a1
+          test "$(git hash-object tests/regressions/pr832/cache_read.c)" = bb0475dcb30e0323e63df282a726da1feb9f891d
           git diff --check 0bf0b299fed91139044c81cc6fcdc5521c34d235 HEAD
           cp tar/ccache/ccache_read.c evidence/source/candidate.c
           git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c > evidence/source/original.c
@@ -124,7 +126,11 @@ jobs:
             libcperciva/util/asprintf.h
             libcperciva/util/warnp.c
             libcperciva/util/warnp.h
+            libcperciva/util/ctassert.h
+            libcperciva/util/sysendian.h
             tar/ccache/ccache_internal.h
             tar/ccache/ccache.h
             tar/multitape/multitape_internal.h
             tar/multitape/multitape.h
+            tar/chunks/chunks.h
+            tar/storage/storage.h
