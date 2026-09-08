@@ -1,0 +1,98 @@
+name: ASTRA PR834 pending validation
+on:
+  push:
+    branches: [ci/astra-pr834-pending-20260908]
+    paths:
+      - .github/workflows/astra-pr834-pending.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pending-validation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 6242e4b05cc9f6ae77e7828af07d247557b90096
+          fetch-depth: 8
+          persist-credentials: false
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Pin exact tested source
+        run: |
+          mkdir -p evidence/tests
+          git rev-parse HEAD > evidence/checkout.txt
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-head.txt
+          git ls-tree HEAD tar/storage/storage_delete.c tests/regressions/pr834/pending.c tests/regressions/pr834/run.py tests/regressions/pr834/README.md > evidence/tested-blobs.txt
+          test "$(git rev-parse HEAD:tar/storage/storage_delete.c)" = 69c890015a3a534c4dd96154938cf402fd3cd2a6
+          test "$(git rev-parse HEAD:tests/regressions/pr834/pending.c)" = 9b3d8e11b61d37eb72944ad07e8eb7b190bf2c91
+          test "$(git rev-parse HEAD:tests/regressions/pr834/run.py)" = 44939abe1694a1996b43872653940259d807f15c
+          cp tests/regressions/pr834/* evidence/tests/
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+          python3 --version > evidence/python.txt
+      - name: Configure real checkout
+        run: |
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+      - name: Actual delete and drain matrix
+        run: |
+          python3 tests/regressions/pr834/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr834/run.py --cc clang --output evidence/candidate-clang.json
+          python3 tests/regressions/pr834/run.py --cc clang --sanitize --output evidence/candidate-sanitized.json
+      - name: Exact baseline and independent cleanup controls
+        shell: bash
+        run: |
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/storage/storage_delete.c > evidence/baseline.c
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, subprocess
+          source = Path('tar/storage/storage_delete.c').read_text()
+          route = 'if (netpacket_op(S->NPC, callback_delete_file_send, C))\n\t\tgoto err1;'
+          rollback = '\t/* This operation was never issued, so it is not pending. */\n\tS->npending -= 1;\n'
+          assert source.count(route) == source.count(rollback) == 1
+          Path('evidence/old-error-route.c').write_text(source.replace(route, route.replace('goto err1;', 'goto err0;')))
+          Path('evidence/no-counter-rollback.c').write_text(source.replace(rollback, ''))
+          baseline = Path('evidence/baseline.c').read_bytes()
+          assert hashlib.sha1(b'blob '+str(len(baseline)).encode()+b'\0'+baseline).hexdigest() == 'a554629145e4dea2ce74ada32d3a3a2f71e4eec2'
+          scenarios = {'issue-reject', 'throttle-error', 'repeat-reject', 'success-after-reject'}
+          for name, passed, expected in [('baseline', 15, scenarios), ('old-error-route', 20, scenarios-{'throttle-error'}), ('no-counter-rollback', 15, scenarios)]:
+              result = subprocess.run(['python3', 'tests/regressions/pr834/run.py', '--source', 'evidence/'+name+'.c', '--output', 'evidence/'+name+'.json'], capture_output=True, text=True, timeout=90)
+              Path('evidence', name+'.log').write_text(result.stdout+result.stderr)
+              assert result.returncode == 1, (name, result.returncode, result.stdout, result.stderr)
+              report = json.loads(Path('evidence', name+'.json').read_text())
+              failures = [row for row in report['results'] if not row['passed']]
+              assert report['cases'] == 33 and report['passed'] == passed
+              assert {row['scenario'] for row in failures} == expected
+              assert all(row['pending_after_attempt'] == row['queued_after_attempt']+1 and row['empty_flush_iterations'] == 3 and row['exit_code'] == 1 for row in failures)
+              probe = next(row for row in failures if row['scenario']=='issue-reject' and row['initial']==0)
+              assert probe['leftover_allocations'] == (0 if name=='no-counter-rollback' else 1)
+              assert probe['close_calls'] == 1 and probe['end_result'] == -1
+          for name in ['candidate-gcc', 'candidate-clang', 'candidate-sanitized']:
+              report = json.loads(Path('evidence', name+'.json').read_text())
+              assert report['cases'] == report['passed'] == 33
+          print('Original and both independent controls distinguish the pending count and request-cookie cleanup.')
+          PY
+      - name: Native project build and five offline version checks
+        run: |
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          printf 'One native PR834 build and five offline version checks passed. No make test, server or real delete.\n' > evidence/native-result.txt
+      - name: Manifest evidence
+        if: always()
+        run: |
+          if test -d evidence; then
+            (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr834-validated-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
