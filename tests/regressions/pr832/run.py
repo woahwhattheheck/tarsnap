@@ -125,7 +125,8 @@ def main() -> int:
             temp = Path(temporary)
             binary = temp / 'cache-read'
             command = shlex.split(args.cc) + [
-                '-std=c99', '-DHAVE_CONFIG_H', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
+                '-std=c99', '-DHAVE_CONFIG_H', '-include', str(root / 'config.h'),
+                '-O1', '-g', '-Wall', '-Wextra', '-Werror',
             ]
             if args.mode == 'read':
                 command.append('-DTEST_NO_MMAP')
