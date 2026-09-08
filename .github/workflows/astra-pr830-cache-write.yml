@@ -1,0 +1,53 @@
+name: ASTRA PR830 cache-write validation
+on:
+  push:
+    branches: [ci/astra-pr830-cache-write-20260908]
+    paths: [.github/workflows/astra-pr830-cache-write.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cache-write:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c0e720da748400d198c46891a6b40073ab1c1d4b
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Exact source and configuration
+        run: |
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/checkout.txt
+          git ls-tree HEAD tar/ccache/ccache_write.c > evidence/tested-source.txt
+          git archive HEAD | gzip -n > evidence/source.tar.gz
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_write.c > evidence/baseline.c
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          cp config.h evidence/config.h
+          cp apisupport-config.h cpusupport-config.h evidence/
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+      - name: Native build and offline smoke
+        run: |
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          printf 'Exact original PR830 native build and five offline version checks; regression fixtures are not included in this preparatory run.\n' > evidence/scope.txt
+      - name: Evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr830-source-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
