@@ -1,0 +1,124 @@
+name: PR832 real cache reader validation
+
+on:
+  push:
+    branches: [review/astra-quay-832-20260908]
+    paths:
+      - .github/workflows/astra-quay-pr832.yml
+      - tests/regressions/pr832/**
+
+permissions:
+  contents: read
+
+jobs:
+  cache-reader:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 411051749e8661260b6d36abb2eb4bad98cfe41d
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure the actual source checkout
+        run: |
+          mkdir -p evidence/source
+          test "$(git rev-parse HEAD)" = 411051749e8661260b6d36abb2eb4bad98cfe41d
+          test "$(git hash-object tar/ccache/ccache_read.c)" = 0156cdeea371dd535a1b7f6e49836b439284aa92
+          test "$(git rev-parse 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c)" = 18afc8338dc5676a4d2cf177af4f740f9308bf08
+          git diff --check 0bf0b299fed91139044c81cc6fcdc5521c34d235 HEAD
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          python -m py_compile tests/regressions/pr832/run.py
+          cp tar/ccache/ccache_read.c evidence/source/candidate.c
+          git show 0bf0b299fed91139044c81cc6fcdc5521c34d235:tar/ccache/ccache_read.c > evidence/source/original.c
+          cp config.h evidence/source/config.h
+      - name: Native, sanitized and independent negative-control executions
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          import sys
+          root = Path.cwd()
+          evidence = root / 'evidence'
+          reader = root / 'tar/ccache/ccache_read.c'
+          current = reader.read_text()
+          free_before = '\t\t\tfree(ccr);\n\t\t\tgoto err5;'
+          read_before = 'if ((C->datalen > 0) &&\n\t    (fread(C->data, C->datalen, 1, R.f) != 1)) {'
+          assert current.count(free_before) == 1
+          assert current.count(read_before) == 1
+          (evidence / 'source/no-record-free.c').write_text(current.replace(free_before, '\t\t\tgoto err5;'))
+          (evidence / 'source/no-empty-read-guard.c').write_text(current.replace(read_before, 'if (fread(C->data, C->datalen, 1, R.f) != 1) {'))
+          leak_cases = {'duplicate-key', 'insert-failure-first', 'insert-failure-middle', 'insert-failure-last'}
+          empty_cases = {'empty-cache', 'empty-cache-null-zero-allocation'}
+          outcomes = []
+          problems = []
+          plans = []
+          for mode in ('read', 'mmap'):
+              plans.extend([
+                  (f'candidate-gcc-{mode}', reader, 'gcc', mode, False, set()),
+                  (f'candidate-clang-{mode}', reader, 'clang', mode, False, set()),
+                  (f'candidate-sanitized-{mode}', reader, 'clang', mode, True, set()),
+                  (f'original-{mode}', evidence / 'source/original.c', 'gcc', mode, False,
+                   leak_cases | (empty_cases if mode == 'read' else set())),
+                  (f'no-record-free-{mode}', evidence / 'source/no-record-free.c', 'gcc', mode, False, leak_cases),
+                  (f'no-empty-read-guard-{mode}', evidence / 'source/no-empty-read-guard.c', 'gcc', mode, False,
+                   empty_cases if mode == 'read' else set()),
+              ])
+          for name, source, compiler, mode, sanitized, failures in plans:
+              destination = evidence / name
+              destination.mkdir()
+              command = [sys.executable, 'tests/regressions/pr832/run.py', '--source', str(source),
+                         '--cc', compiler, '--mode', mode, '--output', str(destination)]
+              if sanitized:
+                  command.append('--sanitize')
+              executed = subprocess.run(command, text=True, capture_output=True, timeout=180)
+              (destination / 'driver.stdout.txt').write_text(executed.stdout)
+              (destination / 'driver.stderr.txt').write_text(executed.stderr)
+              report_file = destination / 'report.json'
+              report = json.loads(report_file.read_text()) if report_file.exists() else {}
+              actual = set(report.get('failed_cases', []))
+              expected_code = 1 if failures else 0
+              valid = (executed.returncode == expected_code and actual == failures
+                       and len(report.get('cases', [])) == 22
+                       and report.get('status') == ('failed' if failures else 'passed'))
+              for case in report.get('cases', []):
+                  if case['name'] in leak_cases and case['name'] in failures:
+                      observed = case.get('observed', {})
+                      valid = valid and observed.get('live_allocations') == 1
+                      valid = valid and observed.get('live_bytes') == report['layout']['record_size']
+              outcomes.append(dict(name=name, matched_expected=valid, returncode=executed.returncode,
+                                   expected_failed_cases=sorted(failures), actual_failed_cases=sorted(actual),
+                                   case_count=len(report.get('cases', [])), error=report.get('error')))
+              print(json.dumps(outcomes[-1], sort_keys=True), flush=True)
+              if not valid:
+                  problems.append(name)
+          (evidence / 'summary.json').write_text(json.dumps(dict(status='passed' if not problems else 'failed',
+              outcomes=outcomes, problems=problems), indent=2) + '\n')
+          assert not problems, problems
+          print('All 12 configurations match their declared outcomes; candidate 22/22 on six native/sanitized builds.')
+          PY
+      - name: Preserve exact source, fixtures, real files and execution results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-quay-pr832-native
+          retention-days: 30
+          path: |
+            evidence/
+            tests/regressions/pr832/
+            lib/datastruct/patricia.c
+            lib/datastruct/patricia.h
+            lib-platform/platform.h
+            libcperciva/util/asprintf.c
+            libcperciva/util/asprintf.h
+            libcperciva/util/warnp.c
+            libcperciva/util/warnp.h
+            tar/ccache/ccache_internal.h
+            tar/ccache/ccache.h
+            tar/multitape/multitape_internal.h
+            tar/multitape/multitape.h
