@@ -1,0 +1,30 @@
+name: ASTRA Sidewalk pin audit
+on:
+  push:
+    branches: [astra/sidewalk-pin-audit-20260911-01]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: woahwhattheheck/commons
+          ref: 34421e690ad6a7c2771762bf080129238a5e78ff
+          path: commons
+          fetch-depth: 1
+      - name: Locate stale Sidewalk pins and prove new blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd commons
+          echo '=== OLD PIN OCCURRENCES ==='
+          git grep -n -E 'f38bacb5|f21a6d44' || true
+          echo '=== CURRENT TARGET BLOBS ==='
+          git hash-object packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md
+          git hash-object packs/sidewalk-signal-web-desk-20260902-01/gems.md
+          echo '=== TITAN POINTER PRESENCE ==='
+          grep -F 'titanmcp 1.4.5' packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md
+          grep -F 'titanmcp 1.4.5' packs/sidewalk-signal-web-desk-20260902-01/gems.md
