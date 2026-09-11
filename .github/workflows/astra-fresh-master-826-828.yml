@@ -1,0 +1,212 @@
+name: ASTRA PR826 PR828 fresh-master replay
+on:
+  push:
+    branches: [ci/astra-fresh-master-826-828-20260911]
+    paths: [.github/workflows/astra-fresh-master-826-828.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pr826-current-master:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ff046af1a24850475fb80bf89d197c9b46dca268
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Reconstruct exact PR826 fix and reviewed harness
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p evidence/tests
+          git fetch --no-tags --depth=32 origin ci/astra-pr826-entry-20260908
+          git cat-file -e 22c60e02fb99b1c7b378acbdf5144eadeb8f446e^{commit}
+          git cat-file -e 06b0acfd2ef8fa18cf5dec05cb9aa93025a8ee4c^{commit}
+          git show HEAD:tar/write.c > evidence/baseline.c
+          git show 22c60e02fb99b1c7b378acbdf5144eadeb8f446e --format= -- tar/write.c > /tmp/pr826.patch
+          git apply --check /tmp/pr826.patch
+          git apply /tmp/pr826.patch
+          git checkout 06b0acfd2ef8fa18cf5dec05cb9aa93025a8ee4c -- tests/regressions/pr826
+          candidate_blob=$(git hash-object tar/write.c)
+          baseline_blob=$(git hash-object evidence/baseline.c)
+          export candidate_blob baseline_blob
+          test "$baseline_blob" = e459cc729f7611d1bd804967ef0ff9875f7294fa
+          read adds dels rest < <(git diff --no-index --numstat evidence/baseline.c tar/write.c || true)
+          test "$adds:$dels" = 1:0
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          p = Path('tests/regressions/pr826/controls.py')
+          s = p.read_text()
+          replacements = {
+              '1fabdbf5c451004af7d805b4edd2ddb254f911c3': os.environ['candidate_blob'],
+              '29efaf98e1d83d0b4abe5d45a47da762af1b4bb4': os.environ['baseline_blob'],
+          }
+          for old, new in replacements.items():
+              assert old in s, old
+              s = s.replace(old, new)
+          p.write_text(s)
+          PY
+          printf 'master=%s\nproduction_commit=%s\nsupport_commit=%s\nbaseline_blob=%s\ncandidate_blob=%s\n' \
+            ff046af1a24850475fb80bf89d197c9b46dca268 \
+            22c60e02fb99b1c7b378acbdf5144eadeb8f446e \
+            06b0acfd2ef8fa18cf5dec05cb9aa93025a8ee4c \
+            "$baseline_blob" "$candidate_blob" > evidence/custody.txt
+          git rev-parse 06b0acfd2ef8fa18cf5dec05cb9aa93025a8ee4c:tests/regressions/pr826/entry.c >> evidence/support-test-blobs.txt
+          git rev-parse 06b0acfd2ef8fa18cf5dec05cb9aa93025a8ee4c:tests/regressions/pr826/fixture.mk >> evidence/support-test-blobs.txt
+          git rev-parse 06b0acfd2ef8fa18cf5dec05cb9aa93025a8ee4c:tests/regressions/pr826/run.py >> evidence/support-test-blobs.txt
+          git rev-parse 06b0acfd2ef8fa18cf5dec05cb9aa93025a8ee4c:tests/regressions/pr826/controls.py >> evidence/support-test-blobs.txt
+          (git diff --no-index evidence/baseline.c tar/write.c > evidence/production.diff || test $? -eq 1)
+          git diff HEAD -- tests/regressions/pr826/controls.py > evidence/hash-rebind.diff
+          cp tests/regressions/pr826/* evidence/tests/
+          git diff --check HEAD
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Build exact current-master postimage
+        shell: bash
+        run: |
+          set -euxo pipefail
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+      - name: Execute PR826 matrices and controls
+        shell: bash
+        run: |
+          set -euxo pipefail
+          candidate_blob=$(git hash-object tar/write.c)
+          python3 tests/regressions/pr826/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr826/run.py --cc clang --output evidence/candidate-clang.json
+          python3 tests/regressions/pr826/controls.py --baseline evidence/baseline.c --output evidence/controls
+          python3 -m py_compile tests/regressions/pr826/run.py tests/regressions/pr826/controls.py
+          CANDIDATE_BLOB="$candidate_blob" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          for name in ('candidate-gcc', 'candidate-clang'):
+              r = json.loads(Path('evidence', name + '.json').read_text())
+              assert r['cases'] == r['passed'] == 88 and r['failed'] == 0
+              assert r['source_blob'] == os.environ['CANDIDATE_BLOB']
+              assert all(x['live'] == x['wrong_cookie'] == x['invalid_free'] == x['open_files'] == 0 and x['tree_preserved'] for x in r['results'])
+          print('PR826 current-master candidate and controls PASS')
+          PY
+      - name: PR826 evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr826-fresh-master-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
+
+  pr828-current-master:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ff046af1a24850475fb80bf89d197c9b46dca268
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Reconstruct exact PR828 fix and reviewed harness
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p evidence/tests
+          git fetch --no-tags --depth=32 origin ci/astra-pr828-append-20260908
+          git cat-file -e 9ff7899fb170dbc5c55e1d027097bdf50ce055e5^{commit}
+          git cat-file -e 1562d164e8026f9bd1429aa97019c671f05a89c3^{commit}
+          git show HEAD:tar/write.c > evidence/baseline.c
+          git show 9ff7899fb170dbc5c55e1d027097bdf50ce055e5 --format= -- tar/write.c > /tmp/pr828.patch
+          git apply --check /tmp/pr828.patch
+          git apply /tmp/pr828.patch
+          git checkout 1562d164e8026f9bd1429aa97019c671f05a89c3 -- tests/regressions/pr828
+          candidate_blob=$(git hash-object tar/write.c)
+          baseline_blob=$(git hash-object evidence/baseline.c)
+          export candidate_blob baseline_blob
+          test "$baseline_blob" = e459cc729f7611d1bd804967ef0ff9875f7294fa
+          read adds dels rest < <(git diff --no-index --numstat evidence/baseline.c tar/write.c || true)
+          test "$adds:$dels" = 2:0
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          p = Path('tests/regressions/pr828/controls.py')
+          s = p.read_text()
+          replacements = {
+              '5511a8effd072804af97988666d0915e26c02100': os.environ['candidate_blob'],
+              '29efaf98e1d83d0b4abe5d45a47da762af1b4bb4': os.environ['baseline_blob'],
+          }
+          for old, new in replacements.items():
+              assert old in s, old
+              s = s.replace(old, new)
+          p.write_text(s)
+          PY
+          printf 'master=%s\nproduction_commit=%s\nsupport_commit=%s\nbaseline_blob=%s\ncandidate_blob=%s\n' \
+            ff046af1a24850475fb80bf89d197c9b46dca268 \
+            9ff7899fb170dbc5c55e1d027097bdf50ce055e5 \
+            1562d164e8026f9bd1429aa97019c671f05a89c3 \
+            "$baseline_blob" "$candidate_blob" > evidence/custody.txt
+          git rev-parse 1562d164e8026f9bd1429aa97019c671f05a89c3:tests/regressions/pr828/append.c >> evidence/support-test-blobs.txt
+          git rev-parse 1562d164e8026f9bd1429aa97019c671f05a89c3:tests/regressions/pr828/fixture.mk >> evidence/support-test-blobs.txt
+          git rev-parse 1562d164e8026f9bd1429aa97019c671f05a89c3:tests/regressions/pr828/run.py >> evidence/support-test-blobs.txt
+          git rev-parse 1562d164e8026f9bd1429aa97019c671f05a89c3:tests/regressions/pr828/controls.py >> evidence/support-test-blobs.txt
+          (git diff --no-index evidence/baseline.c tar/write.c > evidence/production.diff || test $? -eq 1)
+          git diff HEAD -- tests/regressions/pr828/controls.py > evidence/hash-rebind.diff
+          cp tests/regressions/pr828/* evidence/tests/
+          git diff --check HEAD
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Build exact current-master postimage
+        shell: bash
+        run: |
+          set -euxo pipefail
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+      - name: Execute PR828 matrices and controls
+        shell: bash
+        run: |
+          set -euxo pipefail
+          candidate_blob=$(git hash-object tar/write.c)
+          python3 tests/regressions/pr828/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr828/run.py --cc clang --output evidence/candidate-clang.json
+          python3 tests/regressions/pr828/controls.py --baseline evidence/baseline.c --output evidence/controls
+          python3 -m py_compile tests/regressions/pr828/run.py tests/regressions/pr828/controls.py
+          CANDIDATE_BLOB="$candidate_blob" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          for name in ('candidate-gcc', 'candidate-clang'):
+              r = json.loads(Path('evidence', name + '.json').read_text())
+              assert r['cases'] == r['passed'] == 36 and r['failed'] == 0
+              assert r['source_blob'] == os.environ['CANDIDATE_BLOB']
+              assert all(x['live'] == x['late_error_reads'] == x['duplicate_finishes'] == x['bad_returns'] == 0 and x['peak'] == 1 for x in r['results'])
+          print('PR828 current-master candidate and controls PASS')
+          PY
+      - name: PR828 evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr828-fresh-master-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
