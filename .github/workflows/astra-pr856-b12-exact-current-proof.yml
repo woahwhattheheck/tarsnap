@@ -1,0 +1,91 @@
+name: ASTRA PR856 exact-current proof
+
+on:
+  push:
+    branches:
+      - astra/pr856-b12-exact-current-proof-20260911-01
+
+permissions:
+  contents: read
+
+jobs:
+  exact-current-native-proof:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout proof carrier
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Bind exact PR856 production and evidence bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "34437952e7f8e38e6fbeff9a6aa402003bfddbfb"
+          test "$(git hash-object lib/network/tsnetwork_writeq.c)" = "e2af95c940817551ac6715b377477e2d2ffa34d0"
+          test "$(git hash-object tests/unit/network-writeq.c)" = "e2628a0475657ef6a4ab86f2a87ee21113a0f860"
+          test "$(git hash-object tests/unit/network-writeq.sh)" = "613a9bb83cd61f0b73a10bfd4da4eea8bb6f9147"
+          {
+            echo "carrier=$(git rev-parse HEAD)"
+            echo "target_parent=$(git rev-parse HEAD^)"
+            echo "source_blob=$(git hash-object lib/network/tsnetwork_writeq.c)"
+            echo "test_blob=$(git hash-object tests/unit/network-writeq.c)"
+            echo "runner_blob=$(git hash-object tests/unit/network-writeq.sh)"
+            sha256sum lib/network/tsnetwork_writeq.c tests/unit/network-writeq.c tests/unit/network-writeq.sh
+          } | tee /tmp/pr856-receipt.txt
+
+      - name: Install upstream Ubuntu build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y valgrind e2fslibs-dev autoconf-archive
+
+      - name: Configure with GCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          autoreconf -i
+          CC=gcc CFLAGS='-std=c99 -O2' ./configure 2>&1 | tee /tmp/configure-gcc.log
+
+      - name: Native GCC build
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -j2 2>&1 | tee /tmp/make-gcc.log
+          ./tarsnap --version 2>&1 | tee /tmp/version.log
+
+      - name: Exact focused regression with GCC
+        shell: bash
+        run: |
+          set -euo pipefail
+          CC=gcc sh tests/unit/network-writeq.sh . 2>&1 | tee /tmp/network-writeq-gcc.log
+
+      - name: Exact focused regression with Clang
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang --version | head -n 1 | tee /tmp/clang-version.log
+          CC=clang sh tests/unit/network-writeq.sh . 2>&1 | tee /tmp/network-writeq-clang.log
+
+      - name: Whole-project GCC test suite
+        shell: bash
+        env:
+          USE_VALGRIND: 1
+        run: |
+          set -euo pipefail
+          make test VERBOSE=1 2>&1 | tee /tmp/make-test-gcc.log
+
+      - name: Preserve bounded evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-pr856-exact-current-proof
+          if-no-files-found: warn
+          path: |
+            /tmp/pr856-receipt.txt
+            /tmp/configure-gcc.log
+            /tmp/make-gcc.log
+            /tmp/version.log
+            /tmp/network-writeq-gcc.log
+            /tmp/network-writeq-clang.log
+            /tmp/clang-version.log
+            /tmp/make-test-gcc.log
