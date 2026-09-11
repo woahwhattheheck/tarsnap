@@ -1,0 +1,185 @@
+name: ASTRA PR820 PR822 current-master replay
+on:
+  push:
+    branches: [ci/astra-pr820-pr822-current-master-20260911]
+    paths: [.github/workflows/astra-pr820-pr822-current-master.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_MASTER: ff046af1a24850475fb80bf89d197c9b46dca268
+
+jobs:
+  pr820-current-master:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout published PR820 evidence head
+        uses: actions/checkout@v4
+        with:
+          repository: woahwhattheheck/tarsnap
+          ref: 645f6e88f05c430f0b897f1a9597013af55e652c
+          path: support
+          persist-credentials: false
+      - name: Checkout exact current upstream master baseline
+        uses: actions/checkout@v4
+        with:
+          repository: Tarsnap/tarsnap
+          ref: ff046af1a24850475fb80bf89d197c9b46dca268
+          path: baseline
+          persist-credentials: false
+      - name: Install disposable build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Bind custody and compose exact fixed blob
+        run: |
+          set -eu
+          mkdir -p evidence
+          test "$(git -C baseline rev-parse HEAD)" = "$UPSTREAM_MASTER"
+          test "$(git -C baseline rev-parse HEAD:tar/bsdtar.c)" = cb79db9ed8ad2ce7b5d74197cf43d2a49b6ad88d
+          test "$(git -C support rev-parse HEAD)" = 645f6e88f05c430f0b897f1a9597013af55e652c
+          test "$(git -C support rev-parse HEAD:tar/bsdtar.c)" = dc6c24574a73cd8209625bea5b926c3c6cb8a9f1
+          test "$(git -C support rev-parse HEAD:tests/regressions/pr820/run.py)" = cfb0331fa10be320f6d01d5534bcf472e116e63f
+          test "$(git -C support rev-parse HEAD:tests/regressions/pr820/driver.c)" = 04421262b90ae5296a37add76be38a451d39dfd4
+          cp -a baseline candidate
+          rm -rf candidate/.git
+          cp support/tar/bsdtar.c candidate/tar/bsdtar.c
+          test "$(git hash-object candidate/tar/bsdtar.c)" = dc6c24574a73cd8209625bea5b926c3c6cb8a9f1
+          diff -u baseline/tar/bsdtar.c candidate/tar/bsdtar.c > evidence/pr820-current-master.patch || test $? -eq 1
+          printf '%s\n' "$UPSTREAM_MASTER" > evidence/upstream-master.txt
+          git -C baseline rev-parse HEAD:tar/bsdtar.c > evidence/baseline-source-blob.txt
+          git hash-object candidate/tar/bsdtar.c > evidence/candidate-source-blob.txt
+          git -C support rev-parse HEAD > evidence/support-head.txt
+          cp support/tests/regressions/pr820/run.py evidence/pr820-run.py
+          cp support/tests/regressions/pr820/driver.c evidence/pr820-driver.c
+      - name: Configure and build baseline plus current-master composition
+        run: |
+          (cd baseline && autoreconf -i > ../evidence/pr820-baseline-autoreconf.log 2>&1 && ./configure > ../evidence/pr820-baseline-configure.log 2>&1 && make -j2 > ../evidence/pr820-baseline-build.log 2>&1)
+          (cd candidate && autoreconf -i > ../evidence/pr820-candidate-autoreconf.log 2>&1 && ./configure > ../evidence/pr820-candidate-configure.log 2>&1 && make -j2 > ../evidence/pr820-candidate-build.log 2>&1)
+      - name: Replay published parser and native CLI matrix
+        run: |
+          python3 support/tests/regressions/pr820/run.py --source candidate/tar/bsdtar.c --baseline baseline/tar/bsdtar.c --cc gcc --opt 1 --output evidence/pr820-gcc-o1
+          python3 support/tests/regressions/pr820/run.py --source candidate/tar/bsdtar.c --baseline baseline/tar/bsdtar.c --cc clang --opt 1 --output evidence/pr820-clang-o1
+          python3 support/tests/regressions/pr820/run.py --source candidate/tar/bsdtar.c --baseline baseline/tar/bsdtar.c --cc clang --opt 2 --output evidence/pr820-clang-o2
+          python3 support/tests/regressions/pr820/run.py --source candidate/tar/bsdtar.c --baseline baseline/tar/bsdtar.c --cc gcc --opt 2 --baseline-cli baseline/tarsnap --candidate-cli candidate/tarsnap --output evidence/pr820-gcc-o2-native
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          expected = {
+              'pr820-gcc-o1': 70,
+              'pr820-clang-o1': 70,
+              'pr820-clang-o2': 70,
+              'pr820-gcc-o2-native': 152,
+          }
+          for name, cases in expected.items():
+              row = json.loads(Path('evidence', name, 'summary.json').read_text())
+              assert row['status'] == 'PASS', (name, row)
+              assert row['source_blob'] == 'dc6c24574a73cd8209625bea5b926c3c6cb8a9f1'
+              assert row['baseline_blob'] == 'cb79db9ed8ad2ce7b5d74197cf43d2a49b6ad88d'
+              assert row['matched'] == cases and len(row['cases']) == cases, (name, row.get('matched'), len(row['cases']))
+          print('PR820 current-master composition: 362/362 published declared outcomes PASS.')
+          PY
+      - name: Offline candidate smoke
+        run: |
+          : > evidence/pr820-native-smoke.log
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./candidate/$binary --version >> evidence/pr820-native-smoke.log 2>&1
+          done
+          printf 'Exact current-master composition built; five candidate offline version checks passed. No account/server/payment activity.\n' > evidence/pr820-native-result.txt
+      - name: Evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - name: Upload PR820 bounded evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr820-current-master-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
+
+  pr822-current-master:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout published PR822 evidence head
+        uses: actions/checkout@v4
+        with:
+          repository: woahwhattheheck/tarsnap
+          ref: ac3233d1e0cdb23a263a10bbcbfef5122bffe1b6
+          path: support
+          persist-credentials: false
+      - name: Checkout exact current upstream master baseline
+        uses: actions/checkout@v4
+        with:
+          repository: Tarsnap/tarsnap
+          ref: ff046af1a24850475fb80bf89d197c9b46dca268
+          path: baseline
+          persist-credentials: false
+      - name: Install disposable build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Bind custody and compose exact fixed blob
+        run: |
+          set -eu
+          mkdir -p evidence
+          test "$(git -C baseline rev-parse HEAD)" = "$UPSTREAM_MASTER"
+          test "$(git -C baseline rev-parse HEAD:tar/util.c)" = e16564560086441ccbc7f7beade122b1ac115bc2
+          test "$(git -C support rev-parse HEAD)" = ac3233d1e0cdb23a263a10bbcbfef5122bffe1b6
+          test "$(git -C support rev-parse HEAD:tar/util.c)" = 16bf2f878d1eda209d41054060e75b6d16b05adf
+          test "$(git -C support rev-parse HEAD:tests/regressions/pr822/run.py)" = 2b0e238b0de624c62182edae684ad40e8177a477
+          test "$(git -C support rev-parse HEAD:tests/regressions/pr822/driver.c)" = 165ce4f6f5cb2920243cfe1ef56815dd70b07449
+          cp -a baseline candidate
+          rm -rf candidate/.git
+          cp support/tar/util.c candidate/tar/util.c
+          test "$(git hash-object candidate/tar/util.c)" = 16bf2f878d1eda209d41054060e75b6d16b05adf
+          diff -u baseline/tar/util.c candidate/tar/util.c > evidence/pr822-current-master.patch || test $? -eq 1
+          printf '%s\n' "$UPSTREAM_MASTER" > evidence/upstream-master.txt
+          git -C baseline rev-parse HEAD:tar/util.c > evidence/baseline-source-blob.txt
+          git hash-object candidate/tar/util.c > evidence/candidate-source-blob.txt
+          git -C support rev-parse HEAD > evidence/support-head.txt
+          cp support/tests/regressions/pr822/run.py evidence/pr822-run.py
+          cp support/tests/regressions/pr822/driver.c evidence/pr822-driver.c
+      - name: Configure and build current-master composition
+        run: |
+          (cd candidate && autoreconf -i > ../evidence/pr822-candidate-autoreconf.log 2>&1 && ./configure > ../evidence/pr822-candidate-configure.log 2>&1 && make -j2 > ../evidence/pr822-candidate-build.log 2>&1)
+      - name: Replay published real-glibc ASan matrix
+        run: |
+          python3 support/tests/regressions/pr822/run.py --source candidate/tar/util.c --baseline baseline/tar/util.c --cc gcc --opt 1 --output evidence/pr822-gcc-o1
+          python3 support/tests/regressions/pr822/run.py --source candidate/tar/util.c --baseline baseline/tar/util.c --cc gcc --opt 2 --output evidence/pr822-gcc-o2
+          python3 support/tests/regressions/pr822/run.py --source candidate/tar/util.c --baseline baseline/tar/util.c --cc clang --opt 1 --output evidence/pr822-clang-o1
+          python3 support/tests/regressions/pr822/run.py --source candidate/tar/util.c --baseline baseline/tar/util.c --cc clang --opt 2 --output evidence/pr822-clang-o2
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ('pr822-gcc-o1','pr822-gcc-o2','pr822-clang-o1','pr822-clang-o2'):
+              row = json.loads(Path('evidence', name, 'summary.json').read_text())
+              assert row['status'] == 'PASS', (name, row['status'], row.get('error'))
+              assert row['source_blob'] == '16bf2f878d1eda209d41054060e75b6d16b05adf'
+              assert row['baseline_blob'] == 'e16564560086441ccbc7f7beade122b1ac115bc2'
+              assert row['matched'] == 88 and len(row['cases']) == 88, (name, row.get('matched'), len(row['cases']))
+          print('PR822 current-master composition: 352/352 published declared outcomes PASS.')
+          PY
+      - name: Offline candidate smoke
+        run: |
+          : > evidence/pr822-native-smoke.log
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./candidate/$binary --version >> evidence/pr822-native-smoke.log 2>&1
+          done
+          printf 'Exact current-master composition built; five candidate offline version checks passed. No archive/account/server/payment activity.\n' > evidence/pr822-native-result.txt
+      - name: Evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - name: Upload PR822 bounded evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr822-current-master-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
