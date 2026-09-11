@@ -1,0 +1,143 @@
+name: ASTRA Sidewalk canonical pin refresh proof
+
+on:
+  push:
+    branches:
+      - astra/sidewalk-canonical-pin-refresh-20260911-01
+
+permissions:
+  contents: write
+
+jobs:
+  prove:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout evidence carrier
+        uses: actions/checkout@v4
+        with:
+          path: proof
+          fetch-depth: 1
+
+      - name: Checkout exact Commons current main
+        uses: actions/checkout@v4
+        with:
+          repository: woahwhattheheck/commons
+          ref: 3a0ad8ac8e9f5f4246aa4f6522d2e653fddb5105
+          path: commons
+          fetch-depth: 1
+
+      - name: Bind intentional Sep-9 target bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd commons
+          test "$(git rev-parse HEAD)" = '3a0ad8ac8e9f5f4246aa4f6522d2e653fddb5105'
+          test "$(git hash-object packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md)" = '64bc4f76ba9361721761265664eba8c6f8b35bf4'
+          test "$(git hash-object packs/sidewalk-signal-web-desk-20260902-01/gems.md)" = '992ef6303af4da282d6af45ed62f2dd6f39a8852'
+          grep -Fq 'titanmcp 1.4.5' packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md
+          grep -Fq 'titanmcp 1.4.5' packs/sidewalk-signal-web-desk-20260902-01/gems.md
+
+      - name: Reproduce stale live surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd commons
+          if python3 host/business_pack_desk_instance.py > /tmp/before.json; then
+            echo 'expected stale manifest before canonical refresh' >&2
+            exit 1
+          fi
+          grep -Fq 'manifest.assets is stale; run --write' /tmp/before.json
+          grep -Fq 'f38bacb5' ground/BUSINESS_PACKS.json
+          grep -Fq 'f21a6d44' ground/BUSINESS_PACKS.json
+
+      - name: Canonical manifest refresh plus current-pointer lift
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd commons
+          python3 host/business_pack_desk_instance.py --write
+          python3 - <<'PY'
+          from pathlib import Path
+
+          specs = {
+              Path('business-packs.html'): {'f38bacb5': (1, '64bc4f76'), 'f21a6d44': (1, '992ef630')},
+              Path('ground/BUSINESS_PACKS.json'): {'f38bacb5': (1, '64bc4f76'), 'f21a6d44': (1, '992ef630')},
+              Path('ground/BUSINESS_PACKS.md'): {'f38bacb5': (1, '64bc4f76'), 'f21a6d44': (1, '992ef630')},
+              Path('test_business_pack_unique.py'): {'f38bacb5': (3, '64bc4f76'), 'f21a6d44': (3, '992ef630')},
+          }
+          for path, replacements in specs.items():
+              text = path.read_text(encoding='utf-8')
+              for old, (want_count, new) in replacements.items():
+                  got = text.count(old)
+                  if got != want_count:
+                      raise SystemExit(f'{path}: expected {want_count} occurrences of {old}, got {got}')
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+          PY
+
+          mapfile -t changed < <(git diff --name-only)
+          printf '%s\n' "${changed[@]}" | tee /tmp/changed.txt
+          expected=(
+            business-packs.html
+            ground/BUSINESS_PACKS.json
+            ground/BUSINESS_PACKS.md
+            packs/sidewalk-signal-web-desk-20260902-01/manifest.json
+            test_business_pack_unique.py
+          )
+          test "${#changed[@]}" -eq "${#expected[@]}"
+          for p in "${expected[@]}"; do printf '%s\n' "${changed[@]}" | grep -Fxq "$p"; done
+
+      - name: Verify live invariants and historical immutability
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd commons
+          python3 host/business_pack_desk_instance.py | tee /tmp/after.json
+          grep -Fq '"state": "INSTANCE_OK"' /tmp/after.json
+          grep -Fq 'fed2b6756cd63c50139a0f2fce1d32b10c228506864163da8cf87ea430be058a' /tmp/after.json
+          grep -Fq '64bc4f76' ground/BUSINESS_PACKS.json
+          grep -Fq '992ef630' ground/BUSINESS_PACKS.json
+          grep -Fq '64bc4f76' ground/BUSINESS_PACKS.md
+          grep -Fq '992ef630' ground/BUSINESS_PACKS.md
+          grep -Fq '64bc4f76' business-packs.html
+          grep -Fq '992ef630' business-packs.html
+          grep -Fq 'f38bacb5' p/cursor-business-pack-sidewalk-creative-brief-pointer-20260902-01.md
+          grep -Fq 'f21a6d44' p/cursor-business-pack-sidewalk-gems-note-pointer-20260902-01.md
+          python3 -m unittest -v test_business_pack_desk_instance.py test_business_pack_unique.py
+          python3 -m py_compile host/business_pack_desk_instance.py host/business_pack_unique.py test_business_pack_desk_instance.py test_business_pack_unique.py
+
+      - name: Publish exact five-file postimages and receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=proof/astra-evidence/sidewalk-canonical-pin-refresh-20260911-01
+          mkdir -p "$out/ground" "$out/packs/sidewalk-signal-web-desk-20260902-01"
+          cp commons/business-packs.html "$out/business-packs.html"
+          cp commons/ground/BUSINESS_PACKS.json "$out/ground/BUSINESS_PACKS.json"
+          cp commons/ground/BUSINESS_PACKS.md "$out/ground/BUSINESS_PACKS.md"
+          cp commons/packs/sidewalk-signal-web-desk-20260902-01/manifest.json "$out/packs/sidewalk-signal-web-desk-20260902-01/manifest.json"
+          cp commons/test_business_pack_unique.py "$out/test_business_pack_unique.py"
+          git -C commons diff --binary > "$out/repair.patch"
+          {
+            echo 'commons_base=3a0ad8ac8e9f5f4246aa4f6522d2e653fddb5105'
+            echo 'creative_blob=64bc4f76ba9361721761265664eba8c6f8b35bf4'
+            echo 'gems_blob=992ef6303af4da282d6af45ed62f2dd6f39a8852'
+            echo 'manifest_fingerprint=fed2b6756cd63c50139a0f2fce1d32b10c228506864163da8cf87ea430be058a'
+            echo 'changed_paths:'
+            cat /tmp/changed.txt
+            echo 'git_blobs:'
+            for p in business-packs.html ground/BUSINESS_PACKS.json ground/BUSINESS_PACKS.md packs/sidewalk-signal-web-desk-20260902-01/manifest.json test_business_pack_unique.py; do
+              printf '%s=' "$p"; git -C commons hash-object "$p"
+            done
+            echo 'sha256:'
+            (cd commons && sha256sum business-packs.html ground/BUSINESS_PACKS.json ground/BUSINESS_PACKS.md packs/sidewalk-signal-web-desk-20260902-01/manifest.json test_business_pack_unique.py)
+            echo 'tests=PASS'
+            echo 'historical_pointer_receipts=UNCHANGED'
+          } > "$out/receipt.txt"
+          rm proof/.github/workflows/astra-sidewalk-canonical-pin-refresh-20260911-01.yml
+          git -C proof config user.name 'github-actions[bot]'
+          git -C proof config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C proof add -A
+          git -C proof diff --cached --name-status
+          git -C proof commit -m 'evidence: prove Sidewalk manifest and live-pin refresh'
+          git -C proof push origin HEAD:astra/sidewalk-canonical-pin-refresh-20260911-01
