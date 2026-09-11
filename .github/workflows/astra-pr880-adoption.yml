@@ -22,7 +22,7 @@ jobs:
         with:
           repository: Tarsnap/tarsnap
           ref: 90e0cef6279c4233fae15e5d7f41d1a844d5a1f8
-          fetch-depth: 2
+          fetch-depth: 3
           path: target
           persist-credentials: false
       - name: Disposable runner dependencies
@@ -34,11 +34,13 @@ jobs:
           mkdir -p evidence
           test "$(git -C target rev-parse HEAD)" = 90e0cef6279c4233fae15e5d7f41d1a844d5a1f8
           test "$(git -C target rev-parse HEAD^)" = 8bc485b31880e9083bf35daf2854deb0e912500b
+          test "$(git -C target rev-parse HEAD^^)" = ff046af1a24850475fb80bf89d197c9b46dca268
           test "$(git -C target rev-parse HEAD:tar/ccache/ccache_write.c)" = 86f3af60ea5ecb5fa9331ed59ee0489369123bbd
           test "$(git -C support rev-parse HEAD:tests/regressions/pr830/cache_write.c)" = 187ee009df35cf441c9387170a082f90ea444723
           test "$(git -C support rev-parse HEAD:tests/regressions/pr830/run.py)" = ac425ca854225d851ba5db43f6d961c7d0a1aad7
-          git -C target diff ff046af1a24850475fb80bf89d197c9b46dca268..HEAD -- tar/ccache/ccache_write.c > evidence/pr880-production.patch
+          git -C target diff HEAD^^..HEAD -- tar/ccache/ccache_write.c > evidence/pr880-production.patch
           git -C target rev-parse HEAD > evidence/target-head.txt
+          git -C target rev-parse HEAD^^ > evidence/target-base.txt
           git -C target rev-parse HEAD:tar/ccache/ccache_write.c > evidence/target-source-blob.txt
           git -C support rev-parse HEAD > evidence/support-head.txt
           cp support/tests/regressions/pr830/cache_write.c evidence/
