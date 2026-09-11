@@ -1,0 +1,203 @@
+diff --git a/business-packs.html b/business-packs.html
+index 9c832f2..0c6592b 100644
+--- a/business-packs.html
++++ b/business-packs.html
+@@ -47,8 +47,8 @@ pre{background:#f4f4f4;padding:.75rem;overflow:auto}
+ <p>Landed unique instances (pointer only; KEEP/SELL stays factory/Bryce): <a href="./packs/lotribbon-greetings-20260902-01/index.html">LotRibbon Greetings</a> ($1,000 PLANT) · <a href="./packs/sidewalk-signal-web-desk-20260902-01/index.html">Sidewalk Signal</a> ($200 DESK) · <a href="./packs/desk-website-service-20260902-01/door.html">Harborline Local Sites</a> ($200 DESK, similar ≠ clone). Both DESK instances classify through TALLY <code>host/business_pack_desk_instance.py</code>. Harborline’s instance door points at <a href="./packs/waitlist.html">packs/waitlist.html</a> and does not host that form. Peer <code>bc-31c8ef9a</code> maps that layout through TALLY checks in <code>host/harborline_tally_pack_map.py</code> without calling peer <code>verify()</code>. Leftover classifier <code>host/business_pack_harborline_tally_map_pointer.py</code> reads that catalog pointer; this seat did not overwrite it. Sidewalk Signal and LotRibbon catalog rows cite that same shared waitlist; leftover classifier <code>host/business_pack_sidewalk_lotribbon_waitlist.py</code> stays that peer. Original catalog receipt blob <code>2c584983</code> stays. KEEP MAIN on remint #7754. Land-time waitlist-pointer blobs <code>638e60b4</code> / <code>ac60db02</code> stay on that receipt — not live pins. Catalog waitlist helper no longer pins TALLY sidewalk / desk helper / LEAD LotRibbon live blobs. LEAD sold-once is on the LotRibbon instance door; this unique-pack door does not invent that line. Sidewalk sold-once is still not landed. Catalog leftover map-helper pointer <code>cursor-business-pack-harborline-map-helper-pointer-20260902-01</code> cites the leftover Harborline map-pointer helper and does not overwrite it. Sold-once badge stays TALLY; SCOUT <code>scout-demand-door-sold-once-badge-20260902-01</code> is not reminted. Those sold-once bytes are not on current main yet (helper <code>a550ae1b</code>, sidewalk <code>638e60b4</code>, LotRibbon <code>ac60db02</code>). Harborline sold-once is not this seat. Anchor <code>OWNER_UNSET</code>. This door does not invent a numbered sold-once line. This seat did not write TALLY helper, sidewalk door, LotRibbon sold-once files, or rewrite GOAT <code>packs/_template/</code>. Peer <code>bc-31c8ef9a</code> landed additive <a href="./packs/_template/creative_brief.md">creative_brief.md</a>; this seat cites it and does not overwrite Harborline’s instance fill. This seat did not overwrite those instance doors, wrap Harborline, overwrite the helper, or overwrite the waitlist door. Checkout <code>NOT_MINTED</code>.</p>
+ <p>Bryce <code>1788327092.565209</code>: third-party <a href="./packs/_template/rating.md">rating slot</a> is badge + report, empty until owner paste. Completeness audit only — not a dollar valuation. Partner and bulk price <code>OWNER_UNSET</code>. “Independently audited” waits on a filled slot.</p>
+ <p>Bryce hub <code>1788332899.203819</code>: swarm-trivial packs stay saved for Commons and we sell them too. Biggest potential stays in house. Keep the gems. Sell a respectable product. Do not sell trash. This unique-pack door does not write KEEP/SELL rows or rewrite <a href="./keep-sell.html">keep-sell.html</a>. Leftover <code>ground/BUSINESS_PACK_GEMS_IN_HOUSE.json</code> stays peer <code>bc-31c8ef9a</code> — cited, not overwritten. Checkout <code>NOT_MINTED</code>.</p>
+-<p>TALLY filled Sidewalk Signal <a href="./packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md">creative_brief.md</a> blob <code>f38bacb5</code> (receipt <code>tally-sidewalk-creative-brief-20260902-01</code>). This unique-pack door only points. It does not write that instance file or remint SCOUT <code>scout-demand-instance-creative-brief-20260902-01</code>. Checkout <code>NOT_MINTED</code>.</p>
+-<p>TALLY filled Sidewalk Signal <a href="./packs/sidewalk-signal-web-desk-20260902-01/gems.md">gems.md</a> blob <code>f21a6d44</code> (receipt <code>tally-sidewalk-gems-note-20260902-01</code>). Keep-vs-sell stays UNDECIDED (Bryce). This unique-pack door only points. It does not write that instance file, leftover gems-in-house law, or KEEP/SELL rows. Checkout <code>NOT_MINTED</code>.</p>
++<p>TALLY filled Sidewalk Signal <a href="./packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md">creative_brief.md</a> blob <code>64bc4f76</code> (receipt <code>tally-sidewalk-creative-brief-20260902-01</code>). This unique-pack door only points. It does not write that instance file or remint SCOUT <code>scout-demand-instance-creative-brief-20260902-01</code>. Checkout <code>NOT_MINTED</code>.</p>
++<p>TALLY filled Sidewalk Signal <a href="./packs/sidewalk-signal-web-desk-20260902-01/gems.md">gems.md</a> blob <code>992ef630</code> (receipt <code>tally-sidewalk-gems-note-20260902-01</code>). Keep-vs-sell stays UNDECIDED (Bryce). This unique-pack door only points. It does not write that instance file, leftover gems-in-house law, or KEEP/SELL rows. Checkout <code>NOT_MINTED</code>.</p>
+ <p>Leftover sold-once badge pointer helper <code>host/business_pack_sold_once_badge_pointer.py</code> no longer pins live Sidewalk door / TALLY helper blobs. Land-time observations stay <code>638e60b4</code> / <code>a550ae1b</code>. Pointer id <code>cursor-business-pack-sold-once-badge-pointer-20260902-01</code> is not reminted. This unique-pack door does not freeze TALLY sold-once receipt absence. Checkout <code>NOT_MINTED</code>.</p>
+ <p>Peer <code>bc-31c8ef9a</code> SHIP leftover Harborline map pin-lift <code>cursor-pack-harborline-map-pin-lift-20260902-01</code> blob <code>8fe8a002</code> / squash <code>b9e6f54c</code>. This unique-pack door only points. It does not write those leftover helpers or remint that leftover id. Pointer receipt stays <code>7a8987b5</code>. Checkout <code>NOT_MINTED</code>.</p>
+ <p>Paste a JSON list of sales. Shared <code>template_id</code> / <code>vertical</code> is ignored for clone detection. Classification runs in this browser. It does not charge anyone and does not open a checkout.</p>
+diff --git a/ground/BUSINESS_PACKS.json b/ground/BUSINESS_PACKS.json
+index 7fe047d..094879f 100644
+--- a/ground/BUSINESS_PACKS.json
++++ b/ground/BUSINESS_PACKS.json
+@@ -242,14 +242,14 @@
+     "harborline_creative_brief": "packs/desk-website-service-20260902-01/creative_brief.md",
+     "did_not_overwrite_harborline_creative_brief": true,
+     "sidewalk_creative_brief": "packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md",
+-    "sidewalk_creative_brief_blob": "f38bacb5",
++    "sidewalk_creative_brief_blob": "64bc4f76",
+     "sidewalk_creative_brief_receipt": "tally-sidewalk-creative-brief-20260902-01",
+     "sidewalk_creative_brief_pointer": "cursor-business-pack-sidewalk-creative-brief-pointer-20260902-01",
+     "did_not_write_sidewalk_creative_brief": true,
+     "did_not_remint_tally_sidewalk_creative_brief": true,
+     "did_not_remint_scout_instance_creative_brief": true,
+     "sidewalk_gems_note": "packs/sidewalk-signal-web-desk-20260902-01/gems.md",
+-    "sidewalk_gems_note_blob": "f21a6d44",
++    "sidewalk_gems_note_blob": "992ef630",
+     "sidewalk_gems_note_receipt": "tally-sidewalk-gems-note-20260902-01",
+     "sidewalk_gems_note_pointer": "cursor-business-pack-sidewalk-gems-note-pointer-20260902-01",
+     "did_not_write_sidewalk_gems_note": true,
+diff --git a/ground/BUSINESS_PACKS.md b/ground/BUSINESS_PACKS.md
+index 70ea97b..e83bb01 100644
+--- a/ground/BUSINESS_PACKS.md
++++ b/ground/BUSINESS_PACKS.md
+@@ -25,8 +25,8 @@ This is a factory-lane law. It is not a Commons login. Possessing a Commons link
+ 15. Landed unique instances are listed on this card as doors, not KEEP/SELL records. LotRibbon Greetings stays with LEAD `bc-23891c63`. Sidewalk Signal and `host/business_pack_desk_instance.py` stay with TALLY. Harborline Local Sites stays with `bc-31c8ef9a`, classified through that same TALLY helper (`58fef5dd` / PR #7677) and now pointing at the shared waitlist door (`08aabf09` / PR #7678) without hosting that form. Peer `bc-31c8ef9a` maps that Harborline layout through TALLY checks in [host/harborline_tally_pack_map.py](../host/harborline_tally_pack_map.py) (`35ed9d78f`) without calling peer `verify()`. This card only points; it does not overwrite that map. Sidewalk Signal and LotRibbon catalog rows cite that same shared waitlist; this card does not overwrite those instance doors (`638e60b4`, `ac60db02`). Similar ≠ clone. Helper still single-owner. SCOUT sold-once badge `scout-demand-door-sold-once-badge-20260902-01` stays TALLY (not reminted). This card only points; it does not write TALLY helper, sidewalk door, LotRibbon sold-once/creative-brief files, or rewrite GOAT `packs/_template/`. Peer `bc-31c8ef9a` SHIP `ccc2b4348` landed additive [creative_brief.md](../packs/_template/creative_brief.md) plus Harborline instance fill; this card cites that and does not overwrite it. Sold-once bytes: LotRibbon instance door now carries LEAD’s badge; Sidewalk still claimed not landed (helper `a550ae1b`, sidewalk land-time `638e60b4`). Harborline sold-once is not this seat. Anchor `OWNER_UNSET`. This card does not invent a numbered sold-once line. Catalog waitlist helper [host/business_pack_instance_waitlist.py](../host/business_pack_instance_waitlist.py) does not pin live instance blobs. This card does not write those instance files, wrap Harborline, overwrite `packs/waitlist.html`, or edit the keep-sell ledger. Checkout `NOT_MINTED`. Catalog waitlist-row classifier: [host/business_pack_instance_waitlist.py](../host/business_pack_instance_waitlist.py). Catalog leftover map-helper pointer `cursor-business-pack-harborline-map-helper-pointer-20260902-01` (KEEP MAIN on remint #7754) cites [host/business_pack_harborline_tally_map_pointer.py](../host/business_pack_harborline_tally_map_pointer.py) and does not overwrite that helper or the Sidewalk/LotRibbon classifier.
+ 16. Bryce `#business-packs` `1788327092.565209`: a **rating slot** on the pack door is badge URL + report URL, empty until owner paste ([rating.md](../packs/_template/rating.md)). Completeness / quality / uniqueness audit only. A dollar valuation is an earnings claim. Partner name and bulk price `OWNER_UNSET`. This card does not write SCOUT `ADVERTISING_GENERAL.md` and does not pick a partner.
+ 17. Bryce hub `1788332899.203819`: packs the Commons swarm and Bryce could trivially generate revenue from stay **saved for Commons**, and we generate revenue from those ourselves. **Biggest potential stays in house.** Keep the gems. Sell a respectable product. Do not sell trash. This is factory-lane policy, not a KEEP/SELL ledger row and not a Commons gate. GOAT still owns [keep-sell.html](../keep-sell.html). This card does not invent which named pack is KEEP vs SELL, does not rewrite that door, and does not mark LotRibbon / Sidewalk / Harborline on the ledger. Checkout `NOT_MINTED`. Leftover law [BUSINESS_PACK_GEMS_IN_HOUSE.json](./BUSINESS_PACK_GEMS_IN_HOUSE.json) (`cursor-pack-gems-in-house-20260902-01`, seat `bc-31c8ef9a`) is a different file — cited, not overwritten.
+-18. TALLY SHIP `tally-sidewalk-creative-brief-20260902-01` filled [Sidewalk Signal creative_brief.md](../packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md) blob `f38bacb5`. This card only points. Do not remint SCOUT `scout-demand-instance-creative-brief-20260902-01`. Do not write TALLY instance files or GOAT `packs/_template/creative_brief.md`. Checkout `NOT_MINTED`.
+-19. TALLY SHIP `tally-sidewalk-gems-note-20260902-01` filled [Sidewalk Signal gems.md](../packs/sidewalk-signal-web-desk-20260902-01/gems.md) blob `f21a6d44`. Harborline-shaped note; keep-vs-sell stays `UNDECIDED (Bryce decides)`. This card only points. Do not write TALLY instance files, leftover gems-in-house law, Harborline `gems.md`, or KEEP/SELL rows. Unique-pack id and keep-gems id not reminted. Checkout `NOT_MINTED`.
++18. TALLY SHIP `tally-sidewalk-creative-brief-20260902-01` filled [Sidewalk Signal creative_brief.md](../packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md) blob `64bc4f76`. This card only points. Do not remint SCOUT `scout-demand-instance-creative-brief-20260902-01`. Do not write TALLY instance files or GOAT `packs/_template/creative_brief.md`. Checkout `NOT_MINTED`.
++19. TALLY SHIP `tally-sidewalk-gems-note-20260902-01` filled [Sidewalk Signal gems.md](../packs/sidewalk-signal-web-desk-20260902-01/gems.md) blob `992ef630`. Harborline-shaped note; keep-vs-sell stays `UNDECIDED (Bryce decides)`. This card only points. Do not write TALLY instance files, leftover gems-in-house law, Harborline `gems.md`, or KEEP/SELL rows. Unique-pack id and keep-gems id not reminted. Checkout `NOT_MINTED`.
+ 20. Leftover sold-once badge pointer helper [host/business_pack_sold_once_badge_pointer.py](../host/business_pack_sold_once_badge_pointer.py) no longer pins live Sidewalk door / TALLY helper blobs. Land-time observations stay `638e60b4` / `a550ae1b`. Pointer id `cursor-business-pack-sold-once-badge-pointer-20260902-01` is not reminted. This card does not write TALLY sold-once paths and does not freeze TALLY receipt absence. Checkout `NOT_MINTED`.
+ 21. Peer `bc-31c8ef9a` SHIP `cursor-pack-harborline-map-pin-lift-20260902-01` blob `8fe8a002` (squash `b9e6f54c`) lifted live TALLY/LotRibbon pins on Harborline leftover map helpers. This card only points. Do not remint that leftover id. Do not write those helpers. Checkout `NOT_MINTED`.
+ 
+diff --git a/packs/sidewalk-signal-web-desk-20260902-01/manifest.json b/packs/sidewalk-signal-web-desk-20260902-01/manifest.json
+index 197d7bd..e2c75e4 100644
+--- a/packs/sidewalk-signal-web-desk-20260902-01/manifest.json
++++ b/packs/sidewalk-signal-web-desk-20260902-01/manifest.json
+@@ -58,43 +58,43 @@
+   "assets": [
+     {
+       "path": "assets/brand.md",
+-      "bytes": 2481,
+-      "sha256": "0614225f8f0f80feff9acf33e03712eca46394a6c0747c9ea91132ef87305778"
++      "bytes": 2742,
++      "sha256": "9a5a07fa26997dafb5d18a205495217a6736cd7d00bcfca908bbd15e0e3082ef"
+     },
+     {
+       "path": "assets/contract-placeholder.md",
+-      "bytes": 3589,
+-      "sha256": "5a6b234dcf346351b7f6d3b762393b15d12085ab366cd1c8f95c4dccc1fed8e6"
++      "bytes": 3850,
++      "sha256": "27b9be414dc56c63688e73546eb316844ab3fab80dd6048b10df637dfb64ec70"
+     },
+     {
+       "path": "assets/days-8-30.md",
+-      "bytes": 2654,
+-      "sha256": "4db8bd20be65452988c1490b1bf1f08839078a139fb531ea4f15775cd5f87d68"
++      "bytes": 2915,
++      "sha256": "727fceb4a050db593910df5df94d5eb81ed0dffabc1db95bab744047a584bef1"
+     },
+     {
+       "path": "assets/delivery-checklist.md",
+-      "bytes": 4364,
+-      "sha256": "0183e8a2e373b8b27fa8771482e5fc34bac0de5e2aa71a7c7bd995792024053b"
++      "bytes": 4625,
++      "sha256": "50752c2df372238ecedd9ded8aefcc7ce87a37090c85440a43a27a58ea552664"
+     },
+     {
+       "path": "assets/gap-finder-worksheet.md",
+-      "bytes": 5484,
+-      "sha256": "352110e102fb1a7f3f8364253a261a09968895f64abed5bf03d17f325613960e"
++      "bytes": 5745,
++      "sha256": "ee108864a60d75a4b32cf8d0ada3e88a46f574a30cbb2039a6347bfc95ae30ef"
+     },
+     {
+       "path": "assets/outreach-script.md",
+-      "bytes": 4014,
+-      "sha256": "0c4b42da73da505854fbb1fade7ec9604401c17bd06cec35d4d6025a71ea6eb1"
++      "bytes": 4275,
++      "sha256": "f8169ae5839e4f8ceaa009902290674622d76e8e94324d41e3fae8286493b324"
+     },
+     {
+       "path": "assets/paperwork-checklist.md",
+-      "bytes": 5596,
+-      "sha256": "54f9c5ae240cf30598f899bf2deffac53c52e4a23e18d29df7261e517614897f"
++      "bytes": 5857,
++      "sha256": "b3bbbdb42a56770f36d9229109bb86862d1dc48e285475fe7b47257c582a9742"
+     },
+     {
+       "path": "assets/price-sheet.md",
+-      "bytes": 3507,
+-      "sha256": "7538ae989070f6fa478f2904c18b2ecb4ca83cfdc3d1b261ecc6b5cdfcd8ab9b"
++      "bytes": 3768,
++      "sha256": "2291353e09379084f0b83760320dca95e39eb877251e77144bd25eac6d197ffa"
+     },
+     {
+       "path": "assets/showcase-manifest.json",
+@@ -103,16 +103,17 @@
+     }
+   ],
+   "instance_fields": {
+-    "assets_sha256": "f5824206bf400c7025444d7eb08cb929a80a7198da1640c408cdfa0272ddd6e9",
++    "assets_sha256": "31c1422225132436c2ceca52ceda7b5aa5855d34fecf43fdf42584f4d95d262f",
+     "brand": "Sidewalk Signal",
+     "checkout": "OWNER_PASTE_REQUIRED:sidewalk-signal-web-desk-20260902-01",
+-    "instructions_sha256": "3387bde79f758a3e15df366b841dfc22e069a44c9fe995fc2e5cfcb7800b9081",
+-    "ops_sha256": "6a23e0716a8b1fe4d48203b6036f18d9ab13d199505eaa780582b031d8382388"
++    "instructions_sha256": "edc8e79fd84834d6f05b986183b31354dbaaa8979bbb7b70977425fcca51cb08",
++    "ops_sha256": "5d6bbb2ec2ed23cf7d2bb4952b42c7f77b9e9207a0b73bd6270877d7564c7758"
+   },
+-  "fingerprint": "02bafa3a8015c93386f921ffd96f82f6aaa96c1416096eb34c3b3eaf9c285612",
++  "fingerprint": "fed2b6756cd63c50139a0f2fce1d32b10c228506864163da8cf87ea430be058a",
+   "twin_sale_verdict": "CLONE_STAMP",
+   "sell_instance_verdict": "UNIQUE_INSTANCE_SELL_OK",
+   "copy_verdicts": {
++    "README.md": "COPY_OK",
+     "assets/brand.md": "COPY_OK",
+     "assets/contract-placeholder.md": "COPY_OK",
+     "assets/days-8-30.md": "COPY_OK",
+@@ -134,7 +135,6 @@
+     "offer.md": "COPY_OK",
+     "paperwork.md": "COPY_OK",
+     "rating.md": "COPY_OK",
+-    "README.md": "COPY_OK",
+     "running-cost.md": "COPY_OK",
+     "terms.md": "COPY_OK",
+     "week1.md": "COPY_OK"
+diff --git a/test_business_pack_unique.py b/test_business_pack_unique.py
+index dd5b32d..716ef62 100644
+--- a/test_business_pack_unique.py
++++ b/test_business_pack_unique.py
+@@ -929,7 +929,7 @@ class BusinessPackUniqueTest(unittest.TestCase):
+             block["sidewalk_creative_brief"],
+             "packs/sidewalk-signal-web-desk-20260902-01/creative_brief.md",
+         )
+-        self.assertEqual(block["sidewalk_creative_brief_blob"], "f38bacb5")
++        self.assertEqual(block["sidewalk_creative_brief_blob"], "64bc4f76")
+         self.assertEqual(
+             block["sidewalk_creative_brief_receipt"],
+             "tally-sidewalk-creative-brief-20260902-01",
+@@ -957,7 +957,7 @@ class BusinessPackUniqueTest(unittest.TestCase):
+         blob = hashlib.sha1(
+             b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+         ).hexdigest()[:8]
+-        self.assertEqual(blob, "f38bacb5")
++        self.assertEqual(blob, "64bc4f76")
+         self.assertTrue(
+             (ROOT / "p" / "tally-sidewalk-creative-brief-20260902-01.md").is_file()
+         )
+@@ -968,7 +968,7 @@ class BusinessPackUniqueTest(unittest.TestCase):
+                 / "cursor-business-pack-sidewalk-creative-brief-pointer-20260902-01.md"
+             ).is_file()
+         )
+-        self.assertIn("f38bacb5", self.door)
++        self.assertIn("64bc4f76", self.door)
+         self.assertIn("tally-sidewalk-creative-brief-20260902-01", self.card)
+         self.assertIn("password", self.door)
+         self.assertNotIn("<form", self.door)
+@@ -981,7 +981,7 @@ class BusinessPackUniqueTest(unittest.TestCase):
+             block["sidewalk_gems_note"],
+             "packs/sidewalk-signal-web-desk-20260902-01/gems.md",
+         )
+-        self.assertEqual(block["sidewalk_gems_note_blob"], "f21a6d44")
++        self.assertEqual(block["sidewalk_gems_note_blob"], "992ef630")
+         self.assertEqual(
+             block["sidewalk_gems_note_receipt"],
+             "tally-sidewalk-gems-note-20260902-01",
+@@ -1007,7 +1007,7 @@ class BusinessPackUniqueTest(unittest.TestCase):
+         blob = hashlib.sha1(
+             b"blob " + str(len(data)).encode("ascii") + b"\0" + data
+         ).hexdigest()[:8]
+-        self.assertEqual(blob, "f21a6d44")
++        self.assertEqual(blob, "992ef630")
+         self.assertTrue(
+             (ROOT / "p" / "tally-sidewalk-gems-note-20260902-01.md").is_file()
+         )
+@@ -1018,7 +1018,7 @@ class BusinessPackUniqueTest(unittest.TestCase):
+                 / "cursor-business-pack-sidewalk-gems-note-pointer-20260902-01.md"
+             ).is_file()
+         )
+-        self.assertIn("f21a6d44", self.door)
++        self.assertIn("992ef630", self.door)
+         self.assertIn("tally-sidewalk-gems-note-20260902-01", self.card)
+         self.assertIn("UNDECIDED (Bryce)", self.door)
+         self.assertIn("password", self.door)
