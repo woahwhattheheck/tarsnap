@@ -14,6 +14,7 @@ jobs:
       - name: Checkout preserved PR830 harness
         uses: actions/checkout@v4
         with:
+          ref: ddcdf19467fb0e5382fd6c9b991ec30ca71cde46
           path: support
           persist-credentials: false
       - name: Checkout upstream maintainer PR880 exact head
