@@ -1,0 +1,98 @@
+name: ASTRA Sidewalk canonical compute
+
+on:
+  push:
+    branches:
+      - astra/sidewalk-canonical-compute-20260911-01
+
+permissions:
+  contents: write
+
+jobs:
+  compute:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout evidence carrier
+        uses: actions/checkout@v4
+        with:
+          path: proof
+          fetch-depth: 1
+
+      - name: Checkout exact Commons source
+        uses: actions/checkout@v4
+        with:
+          repository: woahwhattheheck/commons
+          ref: b009adb6c1d6b028244e8d42892035ee8ea896d1
+          path: commons
+          fetch-depth: 1
+
+      - name: Reproduce stale Sidewalk instance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd commons
+          if python3 host/business_pack_desk_instance.py > /tmp/sidewalk-before.json; then
+            echo 'expected stale verifier failure before --write' >&2
+            cat /tmp/sidewalk-before.json
+            exit 1
+          fi
+          cat /tmp/sidewalk-before.json
+          grep -Fq 'manifest.assets is stale; run --write' /tmp/sidewalk-before.json
+
+      - name: Run canonical writer and focused verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd commons
+          python3 host/business_pack_desk_instance.py --write
+          python3 host/business_pack_desk_instance.py | tee /tmp/sidewalk-after.json
+          grep -Fq '"state": "INSTANCE_OK"' /tmp/sidewalk-after.json
+          mapfile -t changed < <(git diff --name-only)
+          printf '%s\n' "${changed[@]}" | tee /tmp/sidewalk-diff-names.txt
+          if [ "${#changed[@]}" -lt 1 ] || [ "${#changed[@]}" -gt 2 ]; then
+            echo "unexpected generated path count: ${#changed[@]}" >&2
+            exit 1
+          fi
+          for p in "${changed[@]}"; do
+            case "$p" in
+              packs/sidewalk-signal-web-desk-20260902-01/manifest.json|packs/sidewalk-signal-web-desk-20260902-01/index.html) ;;
+              *) echo "unexpected generated path: $p" >&2; exit 1 ;;
+            esac
+          done
+          python3 -m unittest -v test_business_pack_desk_instance.py test_business_pack_unique.py
+          python3 -m py_compile host/business_pack_desk_instance.py host/business_pack_unique.py host/tjlabs_pack_terms.py test_business_pack_desk_instance.py test_business_pack_unique.py
+
+      - name: Publish exact generated postimage into evidence carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p proof/astra-evidence/sidewalk-canonical-compute-20260911-01
+          cp commons/packs/sidewalk-signal-web-desk-20260902-01/manifest.json proof/astra-evidence/sidewalk-canonical-compute-20260911-01/manifest.json
+          if git -C commons diff --name-only | grep -Fxq 'packs/sidewalk-signal-web-desk-20260902-01/index.html'; then
+            cp commons/packs/sidewalk-signal-web-desk-20260902-01/index.html proof/astra-evidence/sidewalk-canonical-compute-20260911-01/index.html
+          fi
+          {
+            echo 'commons_base=b009adb6c1d6b028244e8d42892035ee8ea896d1'
+            echo 'generator=host/business_pack_desk_instance.py'
+            echo 'generator_mode=--write'
+            echo 'verifier_state=INSTANCE_OK'
+            echo 'changed_paths:'
+            git -C commons diff --name-only
+            echo 'sha256:'
+            sha256sum commons/packs/sidewalk-signal-web-desk-20260902-01/manifest.json
+            if git -C commons diff --name-only | grep -Fxq 'packs/sidewalk-signal-web-desk-20260902-01/index.html'; then
+              sha256sum commons/packs/sidewalk-signal-web-desk-20260902-01/index.html
+            fi
+            echo 'git_blobs:'
+            printf 'manifest='; git -C commons hash-object packs/sidewalk-signal-web-desk-20260902-01/manifest.json
+            if git -C commons diff --name-only | grep -Fxq 'packs/sidewalk-signal-web-desk-20260902-01/index.html'; then
+              printf 'index='; git -C commons hash-object packs/sidewalk-signal-web-desk-20260902-01/index.html
+            fi
+          } > proof/astra-evidence/sidewalk-canonical-compute-20260911-01/receipt.txt
+          rm proof/.github/workflows/astra-sidewalk-canonical-compute-20260911-01.yml
+          git -C proof config user.name 'github-actions[bot]'
+          git -C proof config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C proof add -A
+          git -C proof diff --cached --name-status
+          git -C proof commit -m 'evidence: canonical Sidewalk manifest postimage'
+          git -C proof push origin HEAD:astra/sidewalk-canonical-compute-20260911-01
