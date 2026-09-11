@@ -1,0 +1,84 @@
+name: ASTRA PR880 adoption replay
+on:
+  push:
+    branches: [ci/astra-pr880-adoption-20260911]
+    paths: [.github/workflows/astra-pr880-adoption.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pr880-replay:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout preserved PR830 harness
+        uses: actions/checkout@v4
+        with:
+          path: support
+          persist-credentials: false
+      - name: Checkout upstream maintainer PR880 exact head
+        uses: actions/checkout@v4
+        with:
+          repository: Tarsnap/tarsnap
+          ref: 90e0cef6279c4233fae15e5d7f41d1a844d5a1f8
+          fetch-depth: 2
+          path: target
+          persist-credentials: false
+      - name: Disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+      - name: Bind exact source and harness custody
+        run: |
+          mkdir -p evidence
+          test "$(git -C target rev-parse HEAD)" = 90e0cef6279c4233fae15e5d7f41d1a844d5a1f8
+          test "$(git -C target rev-parse HEAD^)" = 8bc485b31880e9083bf35daf2854deb0e912500b
+          test "$(git -C target rev-parse HEAD:tar/ccache/ccache_write.c)" = 86f3af60ea5ecb5fa9331ed59ee0489369123bbd
+          test "$(git -C support rev-parse HEAD:tests/regressions/pr830/cache_write.c)" = 187ee009df35cf441c9387170a082f90ea444723
+          test "$(git -C support rev-parse HEAD:tests/regressions/pr830/run.py)" = ac425ca854225d851ba5db43f6d961c7d0a1aad7
+          git -C target diff ff046af1a24850475fb80bf89d197c9b46dca268..HEAD -- tar/ccache/ccache_write.c > evidence/pr880-production.patch
+          git -C target rev-parse HEAD > evidence/target-head.txt
+          git -C target rev-parse HEAD:tar/ccache/ccache_write.c > evidence/target-source-blob.txt
+          git -C support rev-parse HEAD > evidence/support-head.txt
+          cp support/tests/regressions/pr830/cache_write.c evidence/
+          cp support/tests/regressions/pr830/run.py evidence/
+      - name: Configure exact upstream checkout
+        run: |
+          cd target
+          autoreconf -i > ../evidence/autoreconf.log 2>&1
+          ./configure > ../evidence/configure.log 2>&1
+      - name: Replay 113-scenario fault matrix
+        run: |
+          python3 support/tests/regressions/pr830/run.py --root target --source target/tar/ccache/ccache_write.c --output evidence/pr880-gcc.json
+          python3 support/tests/regressions/pr830/run.py --root target --source target/tar/ccache/ccache_write.c --cc clang --output evidence/pr880-clang.json
+          python3 support/tests/regressions/pr830/run.py --root target --source target/tar/ccache/ccache_write.c --cc clang --sanitize --auto-init-pattern --output evidence/pr880-sanitized.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          expected = '86f3af60ea5ecb5fa9331ed59ee0489369123bbd'
+          for name in ('pr880-gcc', 'pr880-clang', 'pr880-sanitized'):
+              row = json.loads(Path('evidence', name + '.json').read_text())
+              assert row['status'] == 'PASS', (name, row['status'])
+              assert row['cases'] == row['passed'] == 113 and row['failed'] == 0, (name, row['cases'], row['passed'], row['failed'])
+              assert row['source_blob'] == expected, (name, row['source_blob'])
+          print('PR880 exact source passes all 113 scenarios under GCC, Clang and Clang ASan/UBSan.')
+          PY
+      - name: Native build and offline smoke
+        run: |
+          make -C target -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./target/$binary --version >> evidence/native-smoke.log 2>&1
+          done
+          printf 'Exact upstream PR880 head native build + five offline version checks passed. No live service or payment evidence.\n' > evidence/native-result.txt
+      - name: Evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+      - name: Upload bounded evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: astra-pr880-adoption-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
