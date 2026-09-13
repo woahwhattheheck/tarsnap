@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 
 #include <inttypes.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -195,8 +196,10 @@ main(int argc, char **argv)
 		GETOPT_OPTARG("--passphrase-time"):
 			if (maxtime != 1.0)
 				usage();
-			maxtime = strtod(optarg, NULL);
-			if ((maxtime < 0.05) || (maxtime > 86400)) {
+			maxtime = strtod(optarg, &eptr);
+			if ((eptr == optarg) || (*eptr != '\0') ||
+			    !isfinite(maxtime) || (maxtime < 0.05) ||
+			    (maxtime > 86400)) {
 				warn0("Invalid --passphrase-time argument: %s",
 				    optarg);
 				exit(1);
@@ -310,7 +313,7 @@ main(int argc, char **argv)
 	if (passphrased != 0) {
 		if (readpass(&passphrase,
 		    "Please enter passphrase for keyfile encryption",
-		    "Please confirm passphrase for keyfile encryption", 1)) {
+		    "Please confirm passphrase", 1)) {
 			warnp("Error reading password");
 			exit(1);
 		}
