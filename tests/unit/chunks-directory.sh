@@ -30,8 +30,16 @@ set -- "$@" -I"$root/tar/ccache"
 set -- "$@" -I"$root/tar/chunks"
 set -- "$@" -I"$root/tar/multitape"
 set -- "$@" -I"$root/tar/storage"
+case $(uname -s) in
+Darwin)
+    gc_sections=-Wl,-dead_strip
+    ;;
+*)
+    gc_sections=-Wl,--gc-sections
+    ;;
+esac
 ${CC:-cc} -DHAVE_CONFIG_H -DUSERAGENT='"unit-regression"' \
     -std=c99 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
     "$@" "$root/tests/unit/chunks-directory.c" \
-    -Wl,--gc-sections -o "$tmp/chunks-directory"
+    "$gc_sections" -o "$tmp/chunks-directory"
 "$tmp/chunks-directory"
