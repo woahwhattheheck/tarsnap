@@ -353,7 +353,7 @@ find_newc_header(struct archive_read *a)
 		 * Scan ahead until we find something that looks
 		 * like an odc header.
 		 */
-		while (p + sizeof(struct cpio_newc_header) < q) {
+		while (p + sizeof(struct cpio_newc_header) <= q) {
 			switch (p[5]) {
 			case '1':
 			case '2':
@@ -494,7 +494,7 @@ find_odc_header(struct archive_read *a)
 		 * Scan ahead until we find something that looks
 		 * like an odc header.
 		 */
-		while (p + sizeof(struct cpio_odc_header) < q) {
+		while (p + sizeof(struct cpio_odc_header) <= q) {
 			switch (p[5]) {
 			case '7':
 				if (memcmp("070707", p, 6) == 0
