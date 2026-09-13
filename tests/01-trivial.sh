@@ -68,8 +68,11 @@ scenario_cmd() {
 		kill -TERM "${_cpio_pid}" 2>/dev/null || true
 	) &
 	_watchdog_pid=$!
-	wait "${_cpio_pid}"
-	_cpio_status=$?
+	if wait "${_cpio_pid}"; then
+		_cpio_status=0
+	else
+		_cpio_status=$?
+	fi
 	kill "${_watchdog_pid}" 2>/dev/null || true
 	wait "${_watchdog_pid}" 2>/dev/null || true
 	if [ -f "${cpio_timeout}" ] || [ "${_cpio_status}" -eq 0 ]; then
