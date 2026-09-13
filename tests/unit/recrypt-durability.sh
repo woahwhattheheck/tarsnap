@@ -38,20 +38,22 @@ Darwin)
     gc_sections=-Wl,--gc-sections
     ;;
 esac
-# The full-CLI fixture exposes GCC's -Wclobbered warning on the unchanged
-# getopt loop. Keep it visible under GCC while retaining -Werror for every
-# other diagnostic. Clang also defines __GNUC__, so key off __clang__ first.
-clobbered_flag=
+# This standalone fixture includes the project's getopt compatibility shim,
+# whose intentional #warning diagnostics are suppressed by the normal project
+# flags. Mirror that narrow policy here while retaining -Werror everywhere
+# else; GCC also needs the existing -Wclobbered exception for the getopt loop.
+compiler_warning_flags=
 compiler_macros=$(${CC:-cc} -dM -E - </dev/null 2>/dev/null || true)
 case "$compiler_macros" in
 *__clang__*)
+    compiler_warning_flags='-Wno-#warnings'
     ;;
 *__GNUC__*)
-    clobbered_flag=-Wno-error=clobbered
+    compiler_warning_flags='-Wno-cpp -Wno-error=clobbered'
     ;;
 esac
 ${CC:-cc} -DHAVE_CONFIG_H -DUSERAGENT='"unit-regression"' \
-    -std=c99 -O2 -Wall -Wextra -Werror ${clobbered_flag} -ffunction-sections -fdata-sections \
+    -std=c99 -O2 -Wall -Wextra -Werror ${compiler_warning_flags} -ffunction-sections -fdata-sections \
     "$@" "$root/tests/unit/recrypt-durability.c" \
     "$root/libcperciva/util/getopt.c" \
     "$gc_sections" -o "$tmp/recrypt-durability"
