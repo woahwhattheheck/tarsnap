@@ -39,15 +39,17 @@ Darwin)
     ;;
 esac
 # The full-CLI fixture exposes GCC's -Wclobbered warning on the unchanged
-# getopt loop. Keep it visible when the compiler supports that warning, while
-# retaining -Werror for every other diagnostic. Clang does not implement
-# -Wclobbered, so probe the warning before adding the GCC-specific exception.
+# getopt loop. Keep it visible under GCC while retaining -Werror for every
+# other diagnostic. Clang also defines __GNUC__, so key off __clang__ first.
 clobbered_flag=
-if printf '%s\n' 'int main(void) { return 0; }' | \
-    ${CC:-cc} -x c -c -o "$tmp/clobbered-probe.o" -Werror=clobbered - \
-    >/dev/null 2>&1; then
+compiler_macros=$(${CC:-cc} -dM -E - </dev/null 2>/dev/null || true)
+case "$compiler_macros" in
+*__clang__*)
+    ;;
+*__GNUC__*)
     clobbered_flag=-Wno-error=clobbered
-fi
+    ;;
+esac
 ${CC:-cc} -DHAVE_CONFIG_H -DUSERAGENT='"unit-regression"' \
     -std=c99 -O2 -Wall -Wextra -Werror ${clobbered_flag} -ffunction-sections -fdata-sections \
     "$@" "$root/tests/unit/recrypt-durability.c" \
