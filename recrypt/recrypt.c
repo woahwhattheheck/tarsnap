@@ -511,6 +511,12 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
+	/* Make sure the old and new keys identify different machines. */
+	if (omachinenum == nmachinenum) {
+		warn0("Old and new key files must identify different machines");
+		exit(1);
+	}
+
 	/*
 	 * Make sure any pending checkpoint or commit is completed, and start
 	 * a storage-layer delete transaction on the old machine.  Doing this
