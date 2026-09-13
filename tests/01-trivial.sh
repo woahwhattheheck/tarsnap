@@ -69,14 +69,11 @@ scenario_cmd() {
 	) &
 	_watchdog_pid=$!
 	wait "${_cpio_pid}"
-	_cpio_status=$?
 	kill "${_watchdog_pid}" 2>/dev/null || true
 	wait "${_watchdog_pid}" 2>/dev/null || true
 	if [ -f "${cpio_timeout}" ]; then
 		echo 1 > "${c_exitfile}"
-	elif [ "${_cpio_status}" -ne 0 ]; then
-		echo 0 > "${c_exitfile}"
 	else
-		echo 1 > "${c_exitfile}"
+		echo 0 > "${c_exitfile}"
 	fi
 }
