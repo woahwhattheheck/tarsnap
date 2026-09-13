@@ -64,18 +64,22 @@ scenario_cmd() {
 	_cpio_pid=$!
 	(
 		sleep 3
-		: > "${cpio_timeout}"
-		kill -TERM "${_cpio_pid}" 2>/dev/null || true
+		if kill -0 "${_cpio_pid}" 2>/dev/null; then
+			: > "${cpio_timeout}"
+			kill -TERM "${_cpio_pid}" 2>/dev/null || true
+		fi
 	) &
 	_watchdog_pid=$!
+	# The regression is non-termination, not the command's exact error code.
+	# Use an if so an expected nonzero parser result cannot trip errexit.
 	if wait "${_cpio_pid}"; then
-		_cpio_status=0
+		:
 	else
-		_cpio_status=$?
+		:
 	fi
 	kill "${_watchdog_pid}" 2>/dev/null || true
 	wait "${_watchdog_pid}" 2>/dev/null || true
-	if [ -f "${cpio_timeout}" ] || [ "${_cpio_status}" -eq 0 ]; then
+	if [ -f "${cpio_timeout}" ]; then
 		echo 1 > "${c_exitfile}"
 	else
 		echo 0 > "${c_exitfile}"
