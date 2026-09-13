@@ -12,6 +12,8 @@
 #include <unistd.h>
 
 #include "crypto.h"
+#include "dirutil.h"
+#include "lib-platform/util/fileutil.h"
 #include "insecure_memzero.h"
 #include "keyfile.h"
 #include "keygen.h"
@@ -38,6 +40,41 @@ check_printable(const char * str)
 
 	/* Success! */
 	return (0);
+}
+
+/**
+ * fsync_parentdir(filename):
+ * Make sure that the directory entry for ${filename} is durable.
+ */
+static int
+fsync_parentdir(const char * filename)
+{
+	char * dir;
+	char * slash;
+	int rc;
+
+	/* Make a modifiable copy of the path. */
+	if ((dir = strdup(filename)) == NULL) {
+		warnp("strdup");
+		return (-1);
+	}
+
+	/* No slash means that the parent directory is the current directory. */
+	if ((slash = strrchr(dir, '/')) == NULL) {
+		free(dir);
+		return (dirutil_fsyncdir("."));
+	}
+
+	/* Trim the filename, preserving "/" for paths in the root directory. */
+	if (slash == dir)
+		slash[1] = '\0';
+	else
+		*slash = '\0';
+
+	/* Make the containing directory durable. */
+	rc = dirutil_fsyncdir(dir);
+	free(dir);
+	return (rc);
 }
 
 int
@@ -163,11 +200,19 @@ keygen_actual(struct register_internal * C, const char * keyfilename,
 	    CRYPTO_KEYMASK_USER, passphrase, (size_t)maxmem, maxtime))
 		goto err3;
 
+	/* Make sure the key data is durable before closing the file. */
+	if (fileutil_fsync(keyfile, keyfilename))
+		goto err3;
+
 	/* Close the key file. */
 	if (fclose(keyfile)) {
 		warnp("Error closing key file");
 		goto err2;
 	}
+
+	/* Make sure that the new directory entry is durable. */
+	if (fsync_parentdir(keyfilename))
+		goto err2;
 
 	/* Free allocated memory.  C->passwd is a NUL-terminated string. */
 	insecure_memzero(C->passwd, strlen(C->passwd));
