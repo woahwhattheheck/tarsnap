@@ -30,11 +30,19 @@ set -- "$@" -I"$root/tar/ccache"
 set -- "$@" -I"$root/tar/chunks"
 set -- "$@" -I"$root/tar/multitape"
 set -- "$@" -I"$root/tar/storage"
+case $(uname -s) in
+Darwin)
+    gc_sections=-Wl,-dead_strip
+    ;;
+*)
+    gc_sections=-Wl,--gc-sections
+    ;;
+esac
 # The full-CLI fixture exposes GCC's -Wclobbered warning on the
 # unchanged getopt loop. Keep it visible; all other warnings are errors.
 ${CC:-cc} -DHAVE_CONFIG_H -DUSERAGENT='"unit-regression"' \
     -std=c99 -O2 -Wall -Wextra -Werror -Wno-error=clobbered -ffunction-sections -fdata-sections \
     "$@" "$root/tests/unit/recrypt-durability.c" \
     "$root/libcperciva/util/getopt.c" \
-    -Wl,--gc-sections -o "$tmp/recrypt-durability"
+    "$gc_sections" -o "$tmp/recrypt-durability"
 python3 "$root/tests/unit/recrypt-durability.py" "$tmp/recrypt-durability"
