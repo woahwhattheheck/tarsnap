@@ -140,6 +140,14 @@ keygen_actual(struct register_internal * C, const char * keyfilename,
 		goto err1;
 	}
 
+	/*
+	 * Persist the newly-created directory entry before registration.  If
+	 * this fails, err3 closes the file and err2 removes it while no remote
+	 * machine state has been created yet.
+	 */
+	if (fsync_parentdir(keyfilename))
+		goto err3;
+
 	/* Initialize key cache. */
 	if (crypto_keys_init()) {
 		warnp("Key cache initialization failed");
@@ -212,10 +220,6 @@ keygen_actual(struct register_internal * C, const char * keyfilename,
 		warnp("Error closing key file");
 		goto err2;
 	}
-
-	/* Make sure that the new directory entry is durable. */
-	if (fsync_parentdir(keyfilename))
-		goto err2;
 
 	/* Free allocated memory.  C->passwd is a NUL-terminated string. */
 	insecure_memzero(C->passwd, strlen(C->passwd));
