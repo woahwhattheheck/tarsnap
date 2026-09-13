@@ -313,7 +313,7 @@ main(int argc, char **argv)
 	if (passphrased != 0) {
 		if (readpass(&passphrase,
 		    "Please enter passphrase for keyfile encryption",
-		    "Please confirm passphrase", 1)) {
+		    "Please confirm passphrase for keyfile encryption", 1)) {
 			warnp("Error reading password");
 			exit(1);
 		}
