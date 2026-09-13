@@ -38,10 +38,18 @@ Darwin)
     gc_sections=-Wl,--gc-sections
     ;;
 esac
-# The full-CLI fixture exposes GCC's -Wclobbered warning on the
-# unchanged getopt loop. Keep it visible; all other warnings are errors.
+# The full-CLI fixture exposes GCC's -Wclobbered warning on the unchanged
+# getopt loop. Keep it visible when the compiler supports that warning, while
+# retaining -Werror for every other diagnostic. Clang does not implement
+# -Wclobbered, so probe the warning before adding the GCC-specific exception.
+clobbered_flag=
+if printf '%s\n' 'int main(void) { return 0; }' | \
+    ${CC:-cc} -x c -c -o "$tmp/clobbered-probe.o" -Werror=clobbered - \
+    >/dev/null 2>&1; then
+    clobbered_flag=-Wno-error=clobbered
+fi
 ${CC:-cc} -DHAVE_CONFIG_H -DUSERAGENT='"unit-regression"' \
-    -std=c99 -O2 -Wall -Wextra -Werror -Wno-error=clobbered -ffunction-sections -fdata-sections \
+    -std=c99 -O2 -Wall -Wextra -Werror ${clobbered_flag} -ffunction-sections -fdata-sections \
     "$@" "$root/tests/unit/recrypt-durability.c" \
     "$root/libcperciva/util/getopt.c" \
     "$gc_sections" -o "$tmp/recrypt-durability"
