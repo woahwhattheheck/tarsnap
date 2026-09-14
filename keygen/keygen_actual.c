@@ -12,6 +12,8 @@
 #include <unistd.h>
 
 #include "crypto.h"
+#include "dirutil.h"
+#include "lib-platform/util/fileutil.h"
 #include "insecure_memzero.h"
 #include "keyfile.h"
 #include "keygen.h"
@@ -40,6 +42,44 @@ check_printable(const char * str)
 	return (0);
 }
 
+/**
+ * fsync_parentdir(filename):
+ * Make sure that the directory entry for ${filename} is durable.
+ */
+static int
+fsync_parentdir(const char * filename)
+{
+	char * dir;
+	char * slash;
+	size_t dirlen;
+	int rc;
+
+	/* Make a modifiable copy of the path. */
+	dirlen = strlen(filename) + 1;
+	if ((dir = malloc(dirlen)) == NULL) {
+		warnp("malloc");
+		return (-1);
+	}
+	memcpy(dir, filename, dirlen);
+
+	/* No slash means that the parent directory is the current directory. */
+	if ((slash = strrchr(dir, '/')) == NULL) {
+		free(dir);
+		return (dirutil_fsyncdir("."));
+	}
+
+	/* Trim the filename, preserving "/" for paths in the root directory. */
+	if (slash == dir)
+		slash[1] = '\0';
+	else
+		*slash = '\0';
+
+	/* Make the containing directory durable. */
+	rc = dirutil_fsyncdir(dir);
+	free(dir);
+	return (rc);
+}
+
 int
 keygen_actual(struct register_internal * C, const char * keyfilename,
 	const int passphrased, const uint64_t maxmem,
@@ -53,21 +93,21 @@ keygen_actual(struct register_internal * C, const char * keyfilename,
 
 	/* Sanity-check the user name. */
 	if (strlen(C->user) > 255) {
-		fprintf(stderr, "User name too long: %s\n", C->user);
+		warn0("User name too long: %s", C->user);
 		goto err0;
 	}
 	if (strlen(C->user) == 0) {
-		fprintf(stderr, "User name must be non-empty\n");
+		warn0("User name must be non-empty");
 		goto err0;
 	}
 
 	/* Sanity-check the machine name. */
 	if (strlen(C->name) > 255) {
-		fprintf(stderr, "Machine name too long: %s\n", C->name);
+		warn0("Machine name too long: %s", C->name);
 		goto err0;
 	}
 	if (strlen(C->name) == 0) {
-		fprintf(stderr, "Machine name must be non-empty\n");
+		warn0("Machine name must be non-empty");
 		goto err0;
 	}
 
@@ -80,7 +120,7 @@ keygen_actual(struct register_internal * C, const char * keyfilename,
 
 	/* Sanity-check the memory size. */
 	if (maxmem > SIZE_MAX) {
-		fprintf(stderr, "Passphrase memory size is too large\n");
+		warn0("Passphrase memory size is too large");
 		goto err0;
 	}
 
@@ -99,6 +139,14 @@ keygen_actual(struct register_internal * C, const char * keyfilename,
 		warnp("Cannot create %s", keyfilename);
 		goto err1;
 	}
+
+	/*
+	 * Persist the newly-created directory entry before registration.  If
+	 * this fails, err3 closes the file and err2 removes it while no remote
+	 * machine state has been created yet.
+	 */
+	if (fsync_parentdir(keyfilename))
+		goto err3;
 
 	/* Initialize key cache. */
 	if (crypto_keys_init()) {
@@ -161,6 +209,10 @@ keygen_actual(struct register_internal * C, const char * keyfilename,
 	/* Write keys to file. */
 	if (keyfile_write_file(keyfile, C->machinenum,
 	    CRYPTO_KEYMASK_USER, passphrase, (size_t)maxmem, maxtime))
+		goto err3;
+
+	/* Make sure the key data is durable before closing the file. */
+	if (fileutil_fsync(keyfile, keyfilename))
 		goto err3;
 
 	/* Close the key file. */

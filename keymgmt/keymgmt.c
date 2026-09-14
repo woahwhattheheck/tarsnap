@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 
 #include <inttypes.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,13 +162,13 @@ main(int argc, char **argv)
 			 */
 			if ((optarg_copy = strdup(optarg)) == NULL) {
 				warn0("Out of memory");
-				exit(0);
+				exit(1);
 			}
 			for (tok = strtok_r(optarg_copy, ",", &brkb);
 			     tok;
 			     tok = strtok_r(NULL, ",", &brkb)) {
 				keynum = strtol(tok, &eptr, 0);
-				if ((eptr == tok) ||
+				if ((eptr == tok) || (*eptr != '\0') ||
 				    (keynum < 0) || (keynum > 31)) {
 					warn0("Not a valid key number: %s",
 					    tok);
@@ -195,8 +196,10 @@ main(int argc, char **argv)
 		GETOPT_OPTARG("--passphrase-time"):
 			if (maxtime != 1.0)
 				usage();
-			maxtime = strtod(optarg, NULL);
-			if ((maxtime < 0.05) || (maxtime > 86400)) {
+			maxtime = strtod(optarg, &eptr);
+			if ((eptr == optarg) || (*eptr != '\0') ||
+			    !isfinite(maxtime) || (maxtime < 0.05) ||
+			    (maxtime > 86400)) {
 				warn0("Invalid --passphrase-time argument: %s",
 				    optarg);
 				exit(1);

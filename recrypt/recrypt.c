@@ -14,6 +14,7 @@
 #include "asprintf.h"
 #include "crypto.h"
 #include "dirutil.h"
+#include "fileutil.h"
 #include "getopt.h"
 #include "imalloc.h"
 #include "keyfile.h"
@@ -511,6 +512,12 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
+	/* Make sure the old and new keys identify different machines. */
+	if (omachinenum == nmachinenum) {
+		warn0("Old and new key files must identify different machines");
+		exit(1);
+	}
+
 	/*
 	 * Make sure any pending checkpoint or commit is completed, and start
 	 * a storage-layer delete transaction on the old machine.  Doing this
@@ -644,11 +651,28 @@ main(int argc, char **argv)
 	copydirectory(odir, ndir);
 	printf(" done.\n");
 
+	/*
+	 * Make the new chunk directory durable before deleting any of the old
+	 * machine's blocks: those deletes are committed to the server, so the
+	 * directory which describes where that data now lives must have
+	 * reached disk first.
+	 */
+	if (fileutil_fsync(ndir, ndirpath))
+		exit(1);
+
 	/* Close the old and new chunk directories. */
-	if (fclose(ndir) || fclose(odir)) {
-		warnp("Error closing chunk directory");
+	if (fclose(ndir)) {
+		warnp("Error closing chunk directory: %s", ndirpath);
 		exit(1);
 	}
+	if (fclose(odir)) {
+		warnp("Error closing chunk directory: %s", odirpath);
+		exit(1);
+	}
+
+	/* Make sure the new chunk directory entry is durable as well. */
+	if (dirutil_fsyncdir(ncachedir))
+		exit(1);
 
 	/* Delete blocks from old machine. */
 	for (bpos = 0; bpos < oblistlen; bpos++) {
