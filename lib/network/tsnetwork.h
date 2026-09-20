@@ -142,7 +142,7 @@ int network_writeq_add_internal(NETWORK_WRITEQ *, const uint8_t *, size_t,
  * no way to know how much data from the currently in-progress write was
  * written) this should probably only be used prior to closing a connection.
  * The callbacks for each pending write will be called with a status of
- * NETWORK_STATUS_DEQUEUE, and network_writeq_cancel will return the first
+ * NETWORK_STATUS_CANCEL, and network_writeq_cancel will return the first
  * non-zero value returned by a callback.
  */
 int network_writeq_cancel(NETWORK_WRITEQ *);
