@@ -1,0 +1,115 @@
+name: PR826 current-master native validation
+on:
+  push:
+    branches: [ci/meridian-pr826-current-20260919]
+    paths: [.github/workflows/pr826-current.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-entry:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: acbd53bb580828f76dc5d016a8d596565ce447d5
+          fetch-depth: 16
+          persist-credentials: false
+
+      - name: Install disposable runner dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y e2fslibs-dev autoconf-archive clang libssl-dev zlib1g-dev
+
+      - name: Verify exact current-master contribution
+        env:
+          CONTRIBUTION_SHA: acbd53bb580828f76dc5d016a8d596565ce447d5
+          BASE_SHA: ff046af1a24850475fb80bf89d197c9b46dca268
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = "$CONTRIBUTION_SHA"
+          mkdir -p evidence/tests
+          git rev-parse HEAD > evidence/checkout.txt
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-head.txt
+          git ls-tree -r HEAD tar/write.c tar/ccache/ccache_entry.c tests/regressions/pr826 > evidence/tested-blobs.txt
+          test "$(git rev-parse HEAD:tar/write.c)" = 4f16ea0e6dd99a3137b539f577afdefd14eb5a97
+          test "$(git rev-parse HEAD:tar/ccache/ccache_entry.c)" = ed5f571ebb43ba77c2db2f1072a6c347a29cb41b
+          test "$(git rev-parse HEAD:tests/regressions/pr826/HOSTED.md)" = ad831f6fa6763f880469e1deac1894fa5840faa7
+          test "$(git rev-parse HEAD:tests/regressions/pr826/README.md)" = 48f3bdd6186b4cc7c693c1ca02a7b675785833d7
+          test "$(git rev-parse HEAD:tests/regressions/pr826/controls.py)" = b784f2bb72d96c9533739287a134ce5a0725858e
+          test "$(git rev-parse HEAD:tests/regressions/pr826/entry.c)" = 6e307becead7e2623704aa849e688e3c9a4c473b
+          test "$(git rev-parse HEAD:tests/regressions/pr826/fixture.mk)" = ee7477c2eb8fd91e0d2b014a67053aae1209ead2
+          test "$(git rev-parse HEAD:tests/regressions/pr826/run.py)" = d472056f2274028779844dc93ee2042354e7fd82
+          git diff --check "$BASE_SHA" HEAD
+          git diff --name-only "$BASE_SHA" HEAD | sort > evidence/changed-paths.txt
+          cat > evidence/expected-paths.txt <<'EOF'
+          tar/write.c
+          tests/regressions/pr826/HOSTED.md
+          tests/regressions/pr826/README.md
+          tests/regressions/pr826/controls.py
+          tests/regressions/pr826/entry.c
+          tests/regressions/pr826/fixture.mk
+          tests/regressions/pr826/run.py
+          EOF
+          diff -u evidence/expected-paths.txt evidence/changed-paths.txt
+          cp tests/regressions/pr826/* evidence/tests/
+          git show "$BASE_SHA":tar/write.c > evidence/baseline.c
+          test "$(git hash-object evidence/baseline.c)" = e459cc729f7611d1bd804967ef0ff9875f7294fa
+          cc --version > evidence/compiler-gcc.txt
+          clang --version > evidence/compiler-clang.txt
+
+      - name: Configure and build current project
+        run: |
+          autoreconf -i > evidence/autoreconf.log 2>&1
+          ./configure > evidence/configure.log 2>&1
+          make -j2 > evidence/native-build.log 2>&1
+          for binary in tarsnap tarsnap-keygen tarsnap-keymgmt tarsnap-keyregen tarsnap-recrypt; do
+            ./$binary --version >> evidence/native-smoke.log 2>&1
+          done
+
+      - name: Run exact native cache-entry matrices
+        run: |
+          python3 tests/regressions/pr826/run.py --output evidence/candidate-gcc.json
+          python3 tests/regressions/pr826/run.py --cc clang --output evidence/candidate-clang.json
+          python3 -m py_compile tests/regressions/pr826/run.py tests/regressions/pr826/controls.py
+
+      - name: Run current-master baseline and independent cleanup controls
+        run: |
+          python3 tests/regressions/pr826/controls.py --baseline evidence/baseline.c --output evidence/controls
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          for name in ['candidate-gcc', 'candidate-clang']:
+              result = json.loads(Path('evidence', name + '.json').read_text())
+              assert result['cases'] == result['passed'] == 88 and result['failed'] == 0
+              assert result['source_blob'] == '4f16ea0e6dd99a3137b539f577afdefd14eb5a97'
+              assert result['cache_source_blob'] == 'ed5f571ebb43ba77c2db2f1072a6c347a29cb41b'
+              assert all(
+                  row['live'] == row['wrong_cookie'] == row['invalid_free'] == row['open_files'] == 0
+                  and row['tree_preserved']
+                  for row in result['results']
+              )
+          summary = json.loads(Path('evidence/controls/summary.json').read_text())
+          assert {row['variant']: (row['passed'], row['failed']) for row in summary} == {
+              'baseline': (72, 16),
+              'wrong-cookie': (72, 16),
+              'double-cleanup': (72, 16),
+          }
+          print('Current-master candidate matrices and three negative controls validated.')
+          PY
+
+      - name: Evidence manifest
+        if: always()
+        run: |
+          (cd evidence && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr826-current-master-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
